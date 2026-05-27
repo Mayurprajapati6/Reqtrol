@@ -1,21 +1,48 @@
-import { NextFunction, Request, Response } from "express";
-import { AppError } from "../utils/errors/app.error";
+/**
+ * Error Middleware
+ *
+ * Catches all errors thrown in controllers/services.
+ * Must be registered LAST in Express (after all routes).
+ */
 
-export const appErrorHandler = (err: AppError, req: Request, res: Response, next: NextFunction) => {
+import type { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
+import logger from '../config/logger';
 
-    console.log(err);
-
-    res.status(err.statusCode).json({
-        success: false,
-        message: err.message
+export const errorMiddleware = (
+  err: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction
+): void => {
+  // Validation error from Zod
+  if (err instanceof ZodError) {
+    res.status(400).json({
+      success: false,
+      message: 'Validation error',
+      errors:  err.errors.map((e) => ({
+        field:   e.path.join('.'),
+        message: e.message,
+      })),
     });
-}
+    return;
+  }
 
-export const genericErrorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
-    console.log(err);
+  // Generic application error
+  const error   = err instanceof Error ? err : new Error(String(err));
+  const isKnown = error.message.length < 200;
 
-    res.status(500).json({
-        success: false,
-        message: "Internal Server Error"
-    });
-}
+  logger.error(`[ErrorMiddleware] ${error.message}`);
+
+  res.status(500).json({
+    success: false,
+    message: isKnown ? error.message : 'Internal server error',
+  });
+};
+
+export const notFoundMiddleware = (_req: Request, res: Response): void => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+  });
+};
