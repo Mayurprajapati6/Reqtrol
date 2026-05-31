@@ -86,50 +86,83 @@ async function getLimiterKeyStats(): Promise<Array<{ name: string; keys: number 
 
 async function getLiveLimiterWindows(configs: LimitConfig[]): Promise<Map<string, {
   currentHits: number;
-  resetAt: number;
+  resetAt:     number;
+  bucketStart: number;
+  bucketEnd:   number;
+  reqMin:      number;
+  reqSec:      number;
 }>> {
-  const windows = new Map<string, { currentHits: number; resetAt: number }>();
+  type WindowEntry = { currentHits: number; resetAt: number; bucketStart: number; bucketEnd: number; reqMin: number; reqSec: number };
+  const windows = new Map<string, WindowEntry>();
+  const now = Date.now();
 
   for (const cfg of configs) {
-    windows.set(cfg.endpoint, { currentHits: 0, resetAt: 0 });
+    const windowMs   = cfg.windowMs;
+    const bucketStart = Math.floor(now / windowMs) * windowMs;
+    const bucketEnd   = bucketStart + windowMs;
+    windows.set(cfg.endpoint, { currentHits: 0, resetAt: bucketEnd, bucketStart, bucketEnd, reqMin: 0, reqSec: 0 });
   }
 
   try {
     const redis = getRedis();
-    const keys: string[] = await redis.keys('rt:*');
+    const allKeys: string[] = await redis.keys('rt:*');
 
-    await Promise.all(keys.map(async (key) => {
-      const [, algorithmToken, , ...endpointParts] = key.split(':');
+    await Promise.all(allKeys.map(async (key) => {
+      const parts = key.split(':');
+      // Skip rt:sec: keys — handled separately
+      if (parts[1] === 'sec') return;
+      const [, algorithmToken, , ...endpointParts] = parts;
       const endpoint = normalizeEndpoint(endpointParts.join(':') || 'global');
       const cfg = configs.find((item) => item.endpoint === endpoint);
       if (!cfg || cfg.max <= 0) return;
 
-      const current = windows.get(cfg.endpoint) ?? { currentHits: 0, resetAt: 0 };
-      let count = 0;
-      let resetAt = 0;
+      const current = windows.get(cfg.endpoint);
+      if (!current) return;
+
+      const windowMs    = cfg.windowMs;
+      const bucketStart = Math.floor(now / windowMs) * windowMs;
+      const bucketEnd   = bucketStart + windowMs;
 
       if (algorithmToken === 'fw') {
-        const [rawCount, rawTtl] = await Promise.all([redis.get(key), redis.ttl(key)]);
-        count = Math.max(0, Number(rawCount ?? 0));
-        const ttl = Number(rawTtl ?? 0);
-        if (ttl > 0) {
-          resetAt = Date.now() + ttl * 1000;
-        }
+        const rawCount = await redis.get(key);
+        const count = Math.max(0, Number(rawCount ?? 0));
+        // reqMin = current bucket hit count (the INCR counter is already clock-aligned)
+        current.currentHits = count;
+        current.reqMin      = count;
+        current.resetAt     = bucketEnd;
+        current.bucketStart = bucketStart;
+        current.bucketEnd   = bucketEnd;
       } else if (algorithmToken === 'sw') {
-        const now = Date.now();
-        await redis.zremrangebyscore(key, 0, now - cfg.windowMs);
-        const oldest = await redis.zrange(key, 0, 0, 'WITHSCORES');
-        count = await redis.zcard(key);
-        if (count > 0 && oldest.length >= 2) {
-          const oldestScore = Number(oldest[1]);
-          resetAt = oldestScore + cfg.windowMs;
-        }
+        // ── Clock-aligned read (pure, non-destructive) ─────────────────────────
+        // Count only entries whose score (timestamp) falls within the current
+        // clock-aligned bucket [bucketStart, now].  This makes every sliding-window
+        // limiter reset to 0 at the top of the minute just like fixed-window ones.
+        // We do NOT call zremrangebyscore here — that lives in the engine only.
+        const clockCount = await redis.zcount(key, bucketStart, now);
+        current.currentHits = clockCount;
+        current.reqMin      = clockCount;
+        current.resetAt     = bucketEnd;
+        current.bucketStart = bucketStart;
+        current.bucketEnd   = bucketEnd;
       }
 
-      current.currentHits = count;
-      current.resetAt = resetAt;
       windows.set(cfg.endpoint, current);
     }));
+
+    // Rolling req/sec: count entries in rt:sec:{endpoint} from (now-10000, now] ÷ 10
+    await Promise.all(configs.map(async (cfg) => {
+      const current = windows.get(cfg.endpoint);
+      if (!current) return;
+      const secKey = `rt:sec:${cfg.endpoint}`;
+      try {
+        const secCount = await redis.zcount(secKey, now - 10_000, now);
+        current.reqSec = Math.round((secCount / 10) * 10) / 10;
+      } catch {
+        current.reqSec = 0;
+      }
+      windows.set(cfg.endpoint, current);
+    }));
+
   } catch (err) {
     logger.error(`[AnalyticsService] Live limiter window read error: ${(err as Error).message}`);
   }
@@ -224,7 +257,11 @@ const AnalyticsService = {
         currentHits,
         limit,
         remaining,
-        resetAt: live?.resetAt ?? 0,
+        resetAt:     live?.resetAt     ?? 0,
+        bucketStart: live?.bucketStart ?? 0,
+        bucketEnd:   live?.bucketEnd   ?? 0,
+        reqMin:      live?.reqMin      ?? 0,
+        reqSec:      live?.reqSec      ?? 0,
         windowMs: row.windowMs,
         saturation: limit > 0 ? Math.min(100, Math.round((currentHits / limit) * 1000) / 10) : 0,
         health: limit > 0 && currentHits / limit >= 0.9 ? 'critical' : limit > 0 && currentHits / limit >= 0.7 ? 'warning' : 'healthy',
