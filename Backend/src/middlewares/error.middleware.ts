@@ -1,10 +1,3 @@
-/**
- * Error Middleware
- *
- * Catches all errors thrown in controllers/services.
- * Must be registered LAST in Express (after all routes).
- */
-
 import type { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import logger from '../config/logger';
@@ -15,7 +8,7 @@ export const errorMiddleware = (
   res: Response,
   _next: NextFunction
 ): void => {
-  // Validation error from Zod
+
   if (err instanceof ZodError) {
     res.status(400).json({
       success: false,
@@ -28,7 +21,6 @@ export const errorMiddleware = (
     return;
   }
 
-  // Generic application error
   const error   = err instanceof Error ? err : new Error(String(err));
   const isKnown = error.message.length < 200;
 

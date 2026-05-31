@@ -1,13 +1,3 @@
-/**
- * Reqtrol — Server Entry Point
- *
- * Startup order:
- *   1. Connect MongoDB Atlas
- *   2. Connect Redis (Docker, DB 1)
- *   3. Mount routes
- *   4. Start HTTP server
- */
-
 import express from 'express';
 import cors    from 'cors';
 import helmet  from 'helmet';
@@ -22,7 +12,6 @@ import { errorMiddleware, notFoundMiddleware } from './middlewares/error.middlew
 
 const app = express();
 
-// ─── Security & parsing ───────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
   origin:           config.CORS_ORIGINS,
@@ -37,7 +26,6 @@ app.use(morgan('combined', {
   skip:   (_req, res) => res.statusCode < 400 && config.NODE_ENV === 'production',
 }));
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/v1', rootRouter);
 
 app.get('/health', (_req, res) => {
@@ -51,11 +39,9 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// ─── 404 + error handlers (must be last) ─────────────────────────────────────
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
-// ─── Startup ──────────────────────────────────────────────────────────────────
 async function start(): Promise<void> {
   logger.info('[Reqtrol] Starting...');
 
@@ -74,7 +60,6 @@ async function start(): Promise<void> {
   });
 }
 
-// ─── Graceful shutdown ────────────────────────────────────────────────────────
 async function shutdown(): Promise<void> {
   logger.info('[Reqtrol] Shutting down...');
   await Promise.allSettled([closeRedis(), closeMongoDB()]);
