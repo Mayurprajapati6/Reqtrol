@@ -1,57 +1,81 @@
-import { NextFunction, Request, Response } from "express";
-import { AnyZodObject } from "zod";
-import logger from "../config/logger.config";
+import { z } from 'zod';
 
-/**
- * 
- * @param schema - Zod schema to validate the request body
- * @returns - Middleware function to validate the request body
- */
-export const validateRequestBody = (schema: AnyZodObject) => {
-    return async (req: Request, res: Response, next: NextFunction) => {
-        try {
+export const checkLimitSchema = z.object({
+  requestId: z.string().optional(),
+  userId:    z.string().min(1, 'userId is required'),
+  userName:  z.string().optional().default(''),
+  avatarUrl: z.string().optional().default(''),
+  endpoint:  z.string().min(1, 'endpoint is required'),
+  action:    z.string().optional().default('unknown'),
+  method:    z.string().optional().default('GET'),
+  ip:        z.string().optional().default('unknown'),
+  userAgent: z.string().optional().default('unknown'),
+  timestamp: z.number().optional(),
+  service:   z.string().optional().default('quby'),
+  source:    z.string().optional().default('quby'),
+});
 
-            logger.info("Validating request body");
-            await schema.parseAsync(req.body);
-            logger.info("Request body is valid");
-            next();
+export type CheckLimitBody = z.infer<typeof checkLimitSchema>;
 
-        } catch (error) {
-            // If the validation fails, 
-            logger.error("Request body is invalid");
-            res.status(400).json({
-                message: "Invalid request body",
-                success: false,
-                error: error
-            });
-            
-        }
-    }
-}
+export const trackSchema = z.object({
+  requestId:      z.string().optional(),
+  analyticsId:    z.string().optional(),
+  fingerprint:    z.string().optional(),
+  trackedAt:      z.string().optional(),
+  userId:         z.string().min(1, 'userId is required'),
+  userName:       z.string().optional().default(''),
+  avatarUrl:      z.string().optional().default(''),
+  endpoint:       z.string().min(1, 'endpoint is required'),
+  action:         z.string().optional().default('unknown'),
+  method:         z.string().optional().default('GET'),
+  ip:             z.string().optional().default('unknown'),
+  userAgent:      z.string().optional().default('unknown'),
+  allowed:        z.boolean(),
+  reason:         z.string().nullable().optional().default(null),
+  limit:          z.number().optional().default(0),
+  remaining:      z.number().optional().default(0),
+  resetIn:        z.number().optional().default(0),
+  service:        z.string().optional().default('quby'),
+  source:         z.string().optional().default('quby'),
+  algorithm:      z.string().optional().default('fixed-window'),
+  limiterName:    z.string().optional().default(''),
+  limiterLimit:   z.number().optional(),
+  limiterWindowMs:z.number().optional(),
+  responseTimeMs: z.number().optional().default(0),
+  statusCode:     z.number().int().optional().default(200),
+  timestamp:      z.number().optional(),
+});
 
-/**
- * 
- * @param schema - Zod schema to validate the request body
- * @returns - Middleware function to validate the request query params
- */
-export const validateQueryParams = (schema: AnyZodObject) => {
-    return async (req: Request, res: Response, next: NextFunction) => {
-        try {
+export type TrackBody = z.infer<typeof trackSchema>;
 
-            await schema.parseAsync(req.query);
-            console.log("Query params are valid");
-            next();
+export const simulateSchema = z.object({
+  userId:   z.string().min(1).default('sim-user'),
+  endpoint: z.string().min(1).default('/payment/order'),
+  count:    z.number().int().min(1).max(100).default(20),
+  delayMs:  z.number().int().min(0).max(5000).default(50),
+});
 
-        } catch (error) {
-            // If the validation fails, 
+export type SimulateBody = z.infer<typeof simulateSchema>;
 
-            res.status(400).json({
-                message: "Invalid query params",
-                success: false,
-                error: error
-            });
-            
-        }
-    }
-}
+export const windowQuerySchema = z.object({
+  window: z.coerce.number().int().min(1).max(10080).default(30),
+  source: z.enum(['all', 'quby', 'simulator']).default('all'),
+});
 
+export const limitQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(2000).default(50),
+  source: z.enum(['all', 'quby', 'simulator']).default('all'),
+});
+
+export const historicalRequestsQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  source: z.enum(['all', 'quby', 'simulator']).default('all'),
+});
+
+export const usersQuerySchema = z.object({
+  window: z.coerce.number().int().min(1).max(10080).default(30),
+  limit:  z.coerce.number().int().min(1).max(100).default(20),
+  source: z.enum(['all', 'quby', 'simulator']).default('all'),
+});
