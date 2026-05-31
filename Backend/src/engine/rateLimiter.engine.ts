@@ -72,8 +72,9 @@ export function resolveConfig(endpoint: string): LimitConfig & { resolvedEndpoin
 }
 
 // ─── Algorithm 1: Fixed Window ────────────────────────────────────────────────
-// Key: fg:fw:{userId}:{endpoint}
+// Key: rt:fw:global:{endpoint}
 // Uses Redis INCR + EXPIRE — atomic, O(1) memory per key
+// Global rate limiting: all users share the same window per endpoint
 export async function fixedWindow(
   userId: string,
   endpoint: string,
@@ -81,24 +82,32 @@ export async function fixedWindow(
 ): Promise<LimiterResult> {
   const redis      = getRedis();
   const windowSec  = Math.floor(cfg.windowMs / 1000);
-  const windowKey  = `rt:fw:${userId}:${endpoint}`;
+  const windowKey  = `rt:fw:global:${endpoint}`;
+  const secKey     = `rt:sec:${endpoint}`;
+  const now        = Date.now();
+
+  // Clock-aligned window boundary (top of minute for 1-minute windows)
+  const windowStartMs = Math.floor(now / (windowSec * 1000)) * (windowSec * 1000);
+  const windowEndMs   = windowStartMs + (windowSec * 1000);
+  const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
 
   const pipeline = redis.pipeline();
   pipeline.incr(windowKey);
   pipeline.ttl(windowKey);
+  // Track per-second hit for rolling req/sec calculation (12s TTL)
+  pipeline.zadd(secKey, now, `${now}-${Math.random().toString(36).slice(2)}`);
+  pipeline.expire(secKey, 12);
   const results = await pipeline.exec();
 
   const count = (results?.[0]?.[1] as number) ?? 1;
   const ttl   = (results?.[1]?.[1] as number) ?? -1;
 
-  // Only set expiry on first request in this window
-  if (count === 1 || ttl === -1) {
-    await redis.expire(windowKey, windowSec);
+  // Set expiry aligned to clock boundary on first request or stale key
+  if (count === 1 || ttl === -1 || ttl === -2) {
+    await redis.expire(windowKey, resetIn);
   }
 
-  const freshTtl = await redis.ttl(windowKey);
-  const resetIn  = freshTtl > 0 ? freshTtl : windowSec;
-  const allowed  = count <= cfg.max;
+  const allowed = count <= cfg.max;
 
   return {
     allowed,
@@ -112,9 +121,10 @@ export async function fixedWindow(
 }
 
 // ─── Algorithm 2: Sliding Window ──────────────────────────────────────────────
-// Key: fg:sw:{userId}:{endpoint}
+// Key: rt:sw:global:{endpoint}
 // Uses Redis Sorted Set — score = timestamp, no boundary-burst problem
-// Slightly more memory: O(n) entries per user per endpoint
+// Slightly more memory: O(n) entries per endpoint
+// Global rate limiting: all users share the same window per endpoint
 export async function slidingWindow(
   userId: string,
   endpoint: string,
@@ -123,7 +133,7 @@ export async function slidingWindow(
   const redis       = getRedis();
   const now         = Date.now();
   const windowStart = now - cfg.windowMs;
-  const windowKey   = `rt:sw:${userId}:${endpoint}`;
+  const windowKey   = `rt:sw:global:${endpoint}`;
   const windowSec   = Math.floor(cfg.windowMs / 1000);
 
   const pipeline = redis.pipeline();
@@ -153,7 +163,7 @@ export async function slidingWindow(
     allowed,
     count:     countBeforeAdd + 1,
     limit:     cfg.max,
-    remaining: Math.max(0, cfg.max - countBeforeAdd),
+    remaining: allowed ? Math.max(0, cfg.max - countBeforeAdd - 1) : 0,
     resetIn,
     windowKey,
     algorithm: 'sliding-window',

@@ -97,7 +97,7 @@ export type LiveEventRow = {
   endpoint: string; allowed: boolean;
   reason: string | null; ip: string; responseTimeMs: number;
   timestamp: string; method: string; source: string; limiterName: string;
-  limit: number; remaining: number;
+  limit: number; remaining: number; resetIn: number;
 };
 
 export type HistoricalRequestPage = {
@@ -530,6 +530,7 @@ export const RequestLogRepository = {
       limiterName: d.limiterName || getLimiterMetadata(normalizeEndpoint(d.endpoint)).limiterName,
       limit: d.limit ?? 0,
       remaining: d.remaining ?? 0,
+      resetIn: d.resetIn ?? 0,
     }));
   },
 
@@ -556,6 +557,7 @@ export const RequestLogRepository = {
         limiterName: d.limiterName || getLimiterMetadata(normalizeEndpoint(d.endpoint)).limiterName,
         limit: d.limit ?? 0,
         remaining: d.remaining ?? 0,
+        resetIn: d.resetIn ?? 0,
       })),
       page,
       limit,
