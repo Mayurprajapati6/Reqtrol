@@ -7,6 +7,13 @@ let redisClient: IORedis | null = null;
 export function getRedis(): IORedis {
   if (redisClient) return redisClient;
 
+  if (config.REDIS_URL) {
+  redisClient = new IORedis(config.REDIS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    lazyConnect: true,
+  });
+} else {
   redisClient = new IORedis({
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -20,11 +27,17 @@ export function getRedis(): IORedis {
         logger.error('[Redis:Reqtrol] Max retries reached');
         return null;
       }
+
       const delay = Math.min(times * 200, 3000);
-      logger.warn(`[Redis:Reqtrol] Retrying in ${delay}ms (attempt ${times})`);
+
+      logger.warn(
+        `[Redis:Reqtrol] Retrying in ${delay}ms (attempt ${times})`
+      );
+
       return delay;
     },
   });
+}
 
   redisClient.on('connect', () => logger.info('[Redis:Reqtrol] Connected'));
   redisClient.on('ready', () => logger.info('[Redis:Reqtrol] Ready'));

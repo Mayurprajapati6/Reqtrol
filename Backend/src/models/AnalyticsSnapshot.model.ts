@@ -13,7 +13,7 @@ const AnalyticsSnapshotSchema = new Schema<IAnalyticsSnapshot>(
     key: { type: String, required: true, unique: true, index: true },
     source: { type: String, required: true, index: true },
     payload: { type: Schema.Types.Mixed, required: true },
-    createdAt: { type: Date, default: Date.now, index: true },
+    createdAt: { type: Date, default: Date.now },
   },
   { versionKey: false, timestamps: false },
 );
