@@ -53,7 +53,8 @@ async function start(): Promise<void> {
   });
 
   app.listen(config.PORT, () => {
-    logger.info(`[Reqtrol] Listening on http://localhost:${config.PORT}`);
+    // logger.info(`[Reqtrol] Listening on http://localhost:${config.PORT}`);
+    logger.info(`[Reqtrol] Listening on port ${config.PORT}`);
     console.log('\n✅  Reqtrol running');
     console.log(`   API    → http://localhost:${config.PORT}/api/v1`);
     console.log(`   Health → http://localhost:${config.PORT}/health\n`);
