@@ -4,10 +4,10 @@
   "description": "FlowGuard - Traffic Control & Rate Limiter Service",
   "main": "src/server.ts",
   "scripts": {
-    "start": "ts-node src/server.ts",
-    "dev": "nodemon src/server.ts",
-    "build": "tsc"
-  },
+  "start": "node dist/server.js",
+  "dev": "nodemon src/server.ts",
+  "build": "tsc"
+},
   "keywords": ["rate-limiter", "traffic-control", "microservice"],
   "author": "",
   "license": "ISC",
