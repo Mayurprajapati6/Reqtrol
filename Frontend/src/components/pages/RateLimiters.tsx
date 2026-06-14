@@ -614,10 +614,12 @@ export default function RateLimiters() {
       // but we have live events this minute, use event count capped at limit so
       // the circle stays filled until the minute boundary.
       const usedFromEvents = Math.min(reqMinFromEvents, card.total > 0 ? card.total : reqMinFromEvents);
-      const used = card.used > 0 ? card.used : usedFromEvents;
+      const used      = card.used > 0 ? card.used : usedFromEvents;
       const remaining = Math.max(0, card.total - used);
+      const saturation = card.total > 0 ? Math.min(100, Math.round((used / card.total) * 1000) / 10) : 0;
 
-      return { ...card, used, remaining, reqMin };
+      return { ...card, used, remaining, saturation, reqMin };
+
     });
 
   }, [rawCards, liveEvents, minuteStart]);
