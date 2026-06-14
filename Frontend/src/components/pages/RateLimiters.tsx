@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
@@ -590,16 +590,23 @@ export default function RateLimiters() {
   const rawCards   = cardsQuery.data ?? [];
   const liveEvents = eventsQuery.data ?? [];
 
-  // Enrich cards with the most recent live-event data for sub-second accuracy.
-  // Cards are enriched with live-event data for the current clock-minute.
-  // reqMin always reflects live event count (matches Minute Timeline).
-  // used: use backend value when > 0 (Redis is fresh). When backend returns 0
-  // but live events show requests this minute (Redis key expired early or timing
-  // gap between engine incr and getLimiters poll), derive used from event count.
+  // "Hold last good value" per endpoint — survives mid-minute Redis eviction.
+  // Cleared at every minuteStart change so the circle resets correctly at :00.
+  const lastGoodRef  = useRef<Map<string, { used: number; reqMin: number; saturation: number; remaining: number }>>(new Map());
+  const lastMinuteRef = useRef<number>(0);
+
+  // Enrich cards with live-event data and the hold-last-good fallback.
   const cards = useMemo(() => {
+    // Reset stored values whenever the clock-minute rolls over.
+    if (minuteStart !== lastMinuteRef.current) {
+      lastGoodRef.current.clear();
+      lastMinuteRef.current = minuteStart;
+    }
+
     const recentEvents = liveEvents.filter(
       (e) => new Date(e.timestamp).getTime() >= minuteStart,
     );
+
     return rawCards.map((card) => {
       if (isWebhook(card)) return card;
 
@@ -610,28 +617,41 @@ export default function RateLimiters() {
       const reqMinFromEvents = endpointEvents.length;
       const reqMin = Math.max(card.reqMin ?? 0, reqMinFromEvents);
 
-      // used: backend value takes priority when > 0 (Redis is fresh).
-      // When backend returns used=0 (Redis expired or evicted mid-minute),
-      // derive used from the best available count:
-      //   • reqMinFromEvents (live MongoDB events filtered to this minute)
-      //   • card.reqMin from backend (mongoHits fallback — always populated)
-      // Only use backend reqMin when bucketStart matches the current minute
-      // so stale data from the previous window doesn't bleed through.
-      const isCurrentBucket = card.bucketStart === minuteStart;
-      const reqMinBest = isCurrentBucket
+      // Compute best used from backend + events
+      const isCurrentBucket  = card.bucketStart === minuteStart;
+      const reqMinBest        = isCurrentBucket
         ? Math.max(reqMinFromEvents, card.reqMin ?? 0)
         : reqMinFromEvents;
-      const usedFromReqMin = Math.min(reqMinBest, card.total > 0 ? card.total : reqMinBest);
-      const used       = card.used > 0 ? card.used : usedFromReqMin;
-      const remaining  = Math.max(0, card.total - used);
-      const saturation = card.total > 0 ? Math.min(100, Math.round((used / card.total) * 1000) / 10) : 0;
+      const usedFromReqMin    = Math.min(reqMinBest, card.total > 0 ? card.total : reqMinBest);
+      const computedUsed      = card.used > 0 ? card.used : usedFromReqMin;
 
-      return { ...card, used, remaining, saturation, reqMin };
+      // Hold last known good values (non-zero) from this minute
+      const last = lastGoodRef.current.get(card.endpoint);
+      if (computedUsed > 0 || reqMin > 0) {
+        lastGoodRef.current.set(card.endpoint, {
+          used:       Math.max(computedUsed, last?.used ?? 0),
+          reqMin:     Math.max(reqMin,       last?.reqMin ?? 0),
+          saturation: card.total > 0
+            ? Math.min(100, Math.round((Math.max(computedUsed, last?.used ?? 0) / card.total) * 1000) / 10)
+            : 0,
+          remaining:  Math.max(0, card.total - Math.max(computedUsed, last?.used ?? 0)),
+        });
+      }
 
+      // Fall back to last good when current data is 0
+      const good       = lastGoodRef.current.get(card.endpoint);
+      const used       = computedUsed > 0 ? computedUsed : (good?.used ?? 0);
+      const remaining  = computedUsed > 0 ? Math.max(0, card.total - used) : (good?.remaining ?? card.total);
+      const saturation = computedUsed > 0
+        ? (card.total > 0 ? Math.min(100, Math.round((used / card.total) * 1000) / 10) : 0)
+        : (good?.saturation ?? 0);
+      const displayReqMin = Math.max(reqMin, good?.reqMin ?? 0);
 
+      return { ...card, used, remaining, saturation, reqMin: displayReqMin };
     });
 
   }, [rawCards, liveEvents, minuteStart]);
+
 
   const realCards = useMemo(() => cards.filter((c) => !isWebhook(c)), [cards]);
 
