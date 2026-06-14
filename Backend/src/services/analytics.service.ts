@@ -253,17 +253,16 @@ const AnalyticsService = {
 
     return rows.map((row) => {
       const live = row.endpoint ? liveWindows.get(row.endpoint) : undefined;
-      const currentHits = live?.currentHits ?? 0;        // pure Redis
-      const liveReqMin  = live?.reqMin      ?? 0;        // pure Redis
-      const mongoHits   = row.currentHits ?? 0;
-      const reqMin      = liveReqMin > 0 ? liveReqMin : mongoHits;
+      // BUG FIX: live is always pre-populated with currentHits=0, so `live?.currentHits ?? x`
+      // NEVER falls back to x because 0 is not null/undefined. Use explicit > 0 guard so that
+      // MongoDB's rolling-window count acts as the true fallback when Redis has no data.
+      const liveHits   = live?.currentHits ?? 0;
+      const mongoHits  = row.currentHits   ?? 0;
+      const currentHits = liveHits > 0 ? liveHits : mongoHits;
+      const liveReqMin  = live?.reqMin ?? 0;
+      const reqMin      = liveReqMin > 0 ? liveReqMin : mongoHits; // use mongo rolling count when Redis is 0
       const limit = row.limit ?? 0;
       const remaining = Math.max(0, limit - currentHits);
-      // TEMP DEBUG — remove after diagnosis
-      if (row.endpoint === '/auth/login') {
-        logger.info(`[DEBUG /auth/login] redis.currentHits=${live?.currentHits} redis.reqMin=${live?.reqMin} mongoHits=${mongoHits} → currentHits=${currentHits} remaining=${remaining}`);
-      }
-
       return {
         limiterName: row.limiterName,
         endpoint: row.endpoint,
