@@ -590,38 +590,50 @@ export default function RateLimiters() {
   const liveEvents = eventsQuery.data ?? [];
 
   // Enrich cards with the most recent live-event data for sub-second accuracy.
-  // reqSec / reqMin / bucket fields always come from the backend (1s poll).
-  // used / remaining are enriched from live events ONLY within the current minute.
-  // IMPORTANT: the backend is the source of truth — if it says used=0 we never
-  // override it upward from stale events. Math.max is intentionally removed.
+  // Cards are enriched with live-event data (MongoDB) for the current clock-minute.
+  // Live events are the same source as the Minute Timeline chart, so both will always
+  // agree. Redis (backend) is used as a floor — we take max(backend, event-derived).
+  // The card.used===0 guard is intentionally REMOVED: Redis can return 0 due to lag
+  // or cold start, but MongoDB events from the same minute are always accurate.
   const cards = useMemo(() => {
     const recentEvents = liveEvents.filter(
       (e) => new Date(e.timestamp).getTime() >= minuteStart,
     );
     return rawCards.map((card) => {
       if (isWebhook(card)) return card;
-      // Only enrich used/remaining from live events for sub-second accuracy.
-      // reqMin ALWAYS comes from the backend (Redis zcount) — never override it
-      // from live events, as those can be stale or empty, causing reqMin=0.
-      if (card.used === 0) return card;
-      const bestEvent = recentEvents
-        .filter((e) => normalizeEventEndpoint(e.endpoint) === card.endpoint)
-        .reduce<LiveEvent | null>((best, e) => {
-          if (!e.limit) return best;
-          const used = Math.max(0, e.limit - (e.remaining ?? e.limit));
-          if (!best?.limit) return e;
-          const bestUsed = Math.max(0, best.limit - (best.remaining ?? best.limit));
-          return used > bestUsed ? e : best;
-        }, null);
-      if (!bestEvent?.limit) return card;
+
+      // ── reqMin: always count live events in current minute ─────────────────
+      // This is the same data source as the Minute Timeline chart, so they will
+      // always agree. We count ALL events (allowed + blocked) for the endpoint.
+      const endpointEvents = recentEvents.filter(
+        (e) => normalizeEventEndpoint(e.endpoint) === card.endpoint,
+      );
+      const reqMinFromEvents = endpointEvents.length;
+      // Use whichever is higher — backend Redis or event count
+      const reqMin = Math.max(card.reqMin ?? 0, reqMinFromEvents);
+
+      // ── used / remaining: derive from the event with highest usage ─────────
+      // Look for the event that reports the lowest `remaining` (= highest used).
+      const bestEvent = endpointEvents.reduce<LiveEvent | null>((best, e) => {
+        if (!e.limit) return best;
+        const used = Math.max(0, e.limit - (e.remaining ?? e.limit));
+        if (!best?.limit) return e;
+        const bestUsed = Math.max(0, best.limit - (best.remaining ?? best.limit));
+        return used > bestUsed ? e : best;
+      }, null);
+
+      if (!bestEvent?.limit) {
+        // No event has limit info — keep backend value but apply reqMin
+        return { ...card, reqMin };
+      }
+
       const usedFromEvent = Math.max(0, bestEvent.limit - (bestEvent.remaining ?? bestEvent.limit));
-      // Never let event data push used above what backend reports; just use
-      // event for finer-grained remaining calculation within the same second.
+      // Take the higher of Redis-reported used vs event-derived used
       const used      = Math.min(card.total, Math.max(card.used, usedFromEvent));
       const total     = card.total;
       const remaining = Math.max(0, total - used);
-      // Keep backend reqMin as-is — it's computed from Redis and is authoritative.
-      return { ...card, used, total, remaining };
+
+      return { ...card, used, total, remaining, reqMin };
     });
   }, [rawCards, liveEvents, minuteStart]);
 
