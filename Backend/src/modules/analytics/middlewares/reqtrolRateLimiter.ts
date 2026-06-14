@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import TrackerService from '../../../services/tracker.service';
 import { getLimiterMetadata } from '../config/limiterRegistry';
-import { createAnalyticsId, createRequestFingerprint, shouldTrackOnce, timestampBucket } from '../utils/dedupe';
+import { createAnalyticsId, createRequestFingerprint, getRequestBucket, shouldTrackOnce, timestampBucket } from '../utils/dedupe';
 import { extractLimiterHeaders } from '../utils/extractLimiterHeaders';
 import { normalizeAction, normalizeEndpoint, normalizeSourceValue } from '../utils/normalizeEndpoint';
 
@@ -34,7 +34,11 @@ export function reqtrolRateLimiter(options: ReqtrolRateLimiterOptions = {}) {
     const metadata = getLimiterMetadata(endpoint);
     const userId = options.userId?.(req) ?? inferUserId(req);
     const method = req.method.toUpperCase();
-    const fingerprint = createRequestFingerprint(method, endpoint, userId, timestampBucket(trackedAt));
+    // Use a per-request stable bucket: stored on req so all instances of this
+    // middleware applied to the same HTTP request (app-level + route-level)
+    // always produce the same fingerprint and are deduplicated correctly.
+    const bucket = getRequestBucket(req as Request & { _reqtrolBucket?: number });
+    const fingerprint = createRequestFingerprint(method, endpoint, userId, bucket);
     const analyticsId = createAnalyticsId(fingerprint);
     let tracked = false;
 

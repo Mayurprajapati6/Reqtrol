@@ -15,6 +15,17 @@ export function timestampBucket(date?: Date): number {
   return lastBucket;
 }
 
+/**
+ * Returns a per-request stable bucket stored on the Express req object.
+ * This ensures that reqtrolRateLimiter applied multiple times to the same
+ * HTTP request (app-level + route-level) always produces the same fingerprint
+ * so shouldTrackOnce() deduplicates the extras correctly.
+ */
+export function getRequestBucket(req: { _reqtrolBucket?: number }): number {
+  if (!req._reqtrolBucket) req._reqtrolBucket = timestampBucket(new Date());
+  return req._reqtrolBucket;
+}
+
 export function createRequestFingerprint(
   method: string,
   endpoint: CanonicalEndpoint,
