@@ -1,7 +1,12 @@
 import axios from 'axios';
 import type { AnalyticsQuery, AnalyticsSource } from '@/types/analytics.contract';
-const BASE = '/api/v1';
-const api = axios.create({ baseURL: BASE, timeout: 10_000 });
+const BASE =
+  import.meta.env.VITE_API_URL || "http://localhost:4000/api/v1";
+
+const api = axios.create({
+  baseURL: BASE,
+  timeout: 10000,
+});
 
 export interface OverviewStats {
   totalRequests: number; allowedCount: number; blockedCount: number;
