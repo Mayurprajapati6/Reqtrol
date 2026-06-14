@@ -128,29 +128,12 @@ const LimiterService = {
     const result = await LimiterService._runEndpointCheck(input.userId, endpoint);
     const responseMs = Date.now() - start;
 
-    // ── Step 3: Persist (non-blocking) ───────────────────────────────────────
-    RequestLogRepository.createSilently({
-      userId:         input.userId,
-      userName:       input.userName,
-      avatarUrl:      input.avatarUrl,
-      endpoint,
-      action:         input.action,
-      method:         input.method,
-      ip:             input.ip,
-      allowed:        result.allowed,
-      reason:         result.allowed ? null : 'rate_limit_exceeded',
-      limit:          result.limit,
-      remaining:      result.remaining,
-      resetIn:        result.resetIn,
-      service:        input.service,
-      algorithm:      result.algorithm,
-      limiterName:    metadata.limiterName,
-      limiterLimit:   metadata.limit,
-      limiterWindowMs: metadata.windowMs,
-      responseTimeMs: responseMs,
-      windowKey:      result.windowKey,
-      timestamp:      new Date(),
-    });
+    // NOTE: MongoDB logging is intentionally NOT done here.
+    // Quby's reqtrolRateLimiter middleware (TrackerService.track) logs every
+    // request after the response is sent. Doing it again here would create a
+    // duplicate document per request with a different fingerprint (different ms),
+    // causing every endpoint to show 2x the actual hit count.
+
 
     logger.info(
       `[LimiterService] userId=${input.userId} endpoint=${input.endpoint} ` +

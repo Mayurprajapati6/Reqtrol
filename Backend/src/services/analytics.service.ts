@@ -30,9 +30,17 @@ async function getRedisInfo(): Promise<{
   usedMemoryMb: number; totalKeys: number; connectedClients: number;
   opsPerSec: number; hitRatePct: number; evictedKeys: number;
   rejectedConnections: number; version: string; uptime: string;
+  connected: boolean;
 }> {
+  const DEFAULTS = { usedMemoryMb: 0, totalKeys: 0, connectedClients: 0, opsPerSec: 0, hitRatePct: 0, evictedKeys: 0, rejectedConnections: 0, version: 'unknown', uptime: '—', connected: false };
   try {
     const redis = getRedis();
+    // Fast connectivity check with 2 s timeout — avoids redis.info() hangs on Render cold start
+    const pong = await Promise.race([
+      redis.ping(),
+      new Promise<null>((_, rej) => setTimeout(() => rej(new Error('Redis ping timeout')), 2000)),
+    ]);
+    if (pong !== 'PONG') return DEFAULTS;
     const info: string = await redis.info();
     const get = (key: string): string => {
       const match = info.match(new RegExp(`^${key}:(.+)$`, 'm'));
@@ -52,7 +60,7 @@ async function getRedisInfo(): Promise<{
     const dbMatches = info.matchAll(/^db\d+:keys=(\d+)/gm);
     for (const m of dbMatches) totalKeys += parseInt(m[1], 10);
     return {
-      usedMemoryMb, totalKeys, hitRatePct,
+      usedMemoryMb, totalKeys, hitRatePct, connected: true,
       connectedClients:    parseInt(get('connected_clients'), 10),
       opsPerSec:           parseInt(get('instantaneous_ops_per_sec'), 10),
       evictedKeys:         parseInt(get('evicted_keys'), 10),
@@ -62,7 +70,7 @@ async function getRedisInfo(): Promise<{
     };
   } catch (err) {
     logger.error(`[AnalyticsService] Redis info error: ${(err as Error).message}`);
-    return { usedMemoryMb: 0, totalKeys: 0, connectedClients: 0, opsPerSec: 0, hitRatePct: 0, evictedKeys: 0, rejectedConnections: 0, version: 'unknown', uptime: '—' };
+    return DEFAULTS;
   }
 }
 
@@ -309,6 +317,7 @@ const AnalyticsService = {
   },
 
   async getRedisHealth() {
+    try {
     const info            = await getRedisInfo();
     const limiterKeys     = await getLimiterKeyStats();
     const totalLimiterKeys = limiterKeys.reduce((s, l) => s + l.keys, 0);
@@ -327,7 +336,7 @@ const AnalyticsService = {
     const maxMem  = 512;
     const freeMem = Math.max(0, Math.round((maxMem - info.usedMemoryMb) * 100) / 100);
     return {
-      overallHealth:       info.usedMemoryMb > 0 ? 'Healthy' as const : 'Degraded' as const,
+      overallHealth:       info.connected ? 'Healthy' as const : 'Degraded' as const,
       redisVersion:        info.version,
       uptime:              info.uptime,
       connectedClients:    info.connectedClients,
@@ -347,13 +356,26 @@ const AnalyticsService = {
       activeLimiterKeys:   totalLimiterKeys,
       limiterStorage,
       services: {
-        server:      'Healthy' as const,
+        server:      info.connected ? 'Healthy' as const : 'Error' as const,
         memory:      info.usedMemoryMb > 450 ? 'Degraded' as const : 'Healthy' as const,
         persistence: 'Healthy' as const,
         replication: 'Healthy' as const,
         latency:     'Optimal' as const,
       },
     };
+    } catch (err) {
+      logger.error(`[AnalyticsService] getRedisHealth error: ${(err as Error).message}`);
+      // Always return a valid shape so the dashboard never shows 'unknown'
+      return {
+        overallHealth: 'Error' as const,
+        redisVersion: 'unknown', uptime: '—', connectedClients: 0, usedCpuPct: 0,
+        hitRatePct: 0, evictedKeys: 0, rejectedConnections: 0, usedMemoryMb: 0,
+        freeMemoryMb: 512, maxMemoryMb: 512, totalKeys: 0, expiringKeys: 0,
+        persistentKeys: 0, avgTtlSec: 0, commandThroughput: 0, requestWritesSec: 0,
+        activeLimiterKeys: 0, limiterStorage: [],
+        services: { server: 'Error' as const, memory: 'Healthy' as const, persistence: 'Healthy' as const, replication: 'Healthy' as const, latency: 'Optimal' as const },
+      };
+    }
   },
 };
 
