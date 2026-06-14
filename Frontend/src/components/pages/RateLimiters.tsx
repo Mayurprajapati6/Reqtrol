@@ -592,7 +592,7 @@ export default function RateLimiters() {
 
   // "Hold last good value" per endpoint — survives mid-minute Redis eviction.
   // Cleared at every minuteStart change so the circle resets correctly at :00.
-  const lastGoodRef  = useRef<Map<string, { used: number; reqMin: number; saturation: number; remaining: number }>>(new Map());
+  const lastGoodRef   = useRef<Map<string, { used: number; reqMin: number; saturation: number; remaining: number }>>(new Map());
   const lastMinuteRef = useRef<number>(0);
 
   // Enrich cards with live-event data and the hold-last-good fallback.
@@ -615,42 +615,45 @@ export default function RateLimiters() {
         (e) => normalizeEventEndpoint(e.endpoint) === card.endpoint,
       );
       const reqMinFromEvents = endpointEvents.length;
-      const reqMin = Math.max(card.reqMin ?? 0, reqMinFromEvents);
+      const reqMin           = Math.max(card.reqMin ?? 0, reqMinFromEvents);
 
-      // Compute best used from backend + events
-      const isCurrentBucket  = card.bucketStart === minuteStart;
-      const reqMinBest        = isCurrentBucket
+      // Only trust backend data when its bucket matches the current minute.
+      // If rawCards is stale (previous poll before the minute rolled over),
+      // card.bucketStart < minuteStart → treat as 0 so stale data cannot
+      // repopulate the just-cleared lastGoodRef and bleed into the new minute.
+      const isCurrentBucket = card.bucketStart === minuteStart;
+      const reqMinBest      = isCurrentBucket
         ? Math.max(reqMinFromEvents, card.reqMin ?? 0)
         : reqMinFromEvents;
-      const usedFromReqMin    = Math.min(reqMinBest, card.total > 0 ? card.total : reqMinBest);
-      const computedUsed      = card.used > 0 ? card.used : usedFromReqMin;
+      const usedFromReqMin  = Math.min(reqMinBest, card.total > 0 ? card.total : reqMinBest);
+      const computedUsed    = card.used > 0 ? card.used : usedFromReqMin;
+      const trustedUsed     = isCurrentBucket ? computedUsed : 0; // ← key guard
 
-      // Hold last known good values (non-zero) from this minute
+      // Update map only with current-minute data (non-decreasing within the minute)
       const last = lastGoodRef.current.get(card.endpoint);
-      if (computedUsed > 0 || reqMin > 0) {
+      if (trustedUsed > 0 || (isCurrentBucket && reqMin > 0)) {
         lastGoodRef.current.set(card.endpoint, {
-          used:       Math.max(computedUsed, last?.used ?? 0),
-          reqMin:     Math.max(reqMin,       last?.reqMin ?? 0),
+          used:       Math.max(trustedUsed, last?.used ?? 0),
+          reqMin:     Math.max(reqMin,      last?.reqMin ?? 0),
           saturation: card.total > 0
-            ? Math.min(100, Math.round((Math.max(computedUsed, last?.used ?? 0) / card.total) * 1000) / 10)
+            ? Math.min(100, Math.round((Math.max(trustedUsed, last?.used ?? 0) / card.total) * 1000) / 10)
             : 0,
-          remaining:  Math.max(0, card.total - Math.max(computedUsed, last?.used ?? 0)),
+          remaining:  Math.max(0, card.total - Math.max(trustedUsed, last?.used ?? 0)),
         });
       }
 
       // Fall back to last good when current data is 0
-      const good       = lastGoodRef.current.get(card.endpoint);
-      const used       = computedUsed > 0 ? computedUsed : (good?.used ?? 0);
-      const remaining  = computedUsed > 0 ? Math.max(0, card.total - used) : (good?.remaining ?? card.total);
-      const saturation = computedUsed > 0
-        ? (card.total > 0 ? Math.min(100, Math.round((used / card.total) * 1000) / 10) : 0)
-        : (good?.saturation ?? 0);
+      const good        = lastGoodRef.current.get(card.endpoint);
+      const used        = trustedUsed > 0 ? trustedUsed : (good?.used ?? 0);
+      const remaining   = Math.max(0, card.total - used);
+      const saturation  = card.total > 0 ? Math.min(100, Math.round((used / card.total) * 1000) / 10) : 0;
       const displayReqMin = Math.max(reqMin, good?.reqMin ?? 0);
 
       return { ...card, used, remaining, saturation, reqMin: displayReqMin };
     });
 
   }, [rawCards, liveEvents, minuteStart]);
+
 
 
   const realCards = useMemo(() => cards.filter((c) => !isWebhook(c)), [cards]);
