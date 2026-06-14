@@ -253,19 +253,17 @@ const AnalyticsService = {
 
     return rows.map((row) => {
       const live = row.endpoint ? liveWindows.get(row.endpoint) : undefined;
-      // currentHits: use Redis ONLY — it is the rate-limit source of truth.
-      // MongoDB is NOT used as a fallback here because it can have 2 documents
-      // per request when Quby applies reqtrolRateLimiter more than once per route,
-      // which would show 2/5 for a single user action.
-      // If Redis is 0 (key expired or not yet written), we correctly show 0.
       const currentHits = live?.currentHits ?? 0;        // pure Redis
       const liveReqMin  = live?.reqMin      ?? 0;        // pure Redis
-      // reqMin: fall back to MongoDB count only if Redis has no data,
-      // so the frontend can at least show recent activity in the minute display.
       const mongoHits   = row.currentHits ?? 0;
       const reqMin      = liveReqMin > 0 ? liveReqMin : mongoHits;
       const limit = row.limit ?? 0;
       const remaining = Math.max(0, limit - currentHits);
+      // TEMP DEBUG — remove after diagnosis
+      if (row.endpoint === '/auth/login') {
+        logger.info(`[DEBUG /auth/login] redis.currentHits=${live?.currentHits} redis.reqMin=${live?.reqMin} mongoHits=${mongoHits} → currentHits=${currentHits} remaining=${remaining}`);
+      }
+
       return {
         limiterName: row.limiterName,
         endpoint: row.endpoint,
