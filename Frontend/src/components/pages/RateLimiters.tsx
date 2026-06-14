@@ -600,8 +600,9 @@ export default function RateLimiters() {
     );
     return rawCards.map((card) => {
       if (isWebhook(card)) return card;
-      // Only enrich if backend already shows activity in this bucket
-      // (card.used > 0 means the 1s poll has already seen this minute's data)
+      // Only enrich used/remaining from live events for sub-second accuracy.
+      // reqMin ALWAYS comes from the backend (Redis zcount) — never override it
+      // from live events, as those can be stale or empty, causing reqMin=0.
       if (card.used === 0) return card;
       const bestEvent = recentEvents
         .filter((e) => normalizeEventEndpoint(e.endpoint) === card.endpoint)
@@ -619,14 +620,8 @@ export default function RateLimiters() {
       const used      = Math.min(card.total, Math.max(card.used, usedFromEvent));
       const total     = card.total;
       const remaining = Math.max(0, total - used);
-      
-      // Calculate req/min from live events in current minute
-      const endpointEvents = recentEvents.filter(
-        (e) => normalizeEventEndpoint(e.endpoint) === card.endpoint
-      );
-      const reqMin = endpointEvents.length;
-      
-      return { ...card, used, total, remaining, reqMin };
+      // Keep backend reqMin as-is — it's computed from Redis and is authoritative.
+      return { ...card, used, total, remaining };
     });
   }, [rawCards, liveEvents, minuteStart]);
 

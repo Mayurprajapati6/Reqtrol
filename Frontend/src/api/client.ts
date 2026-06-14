@@ -8,6 +8,26 @@ const api = axios.create({
   timeout: 10000,
 });
 
+/**
+ * Fires a HEAD request to /health to wake up a sleeping Render instance.
+ * Returns true if the backend responded, false if it timed out or errored.
+ * Use on initial app mount so real data calls don't hit a cold server.
+ */
+export async function warmupBackend(timeoutMs = 30_000): Promise<boolean> {
+  // Derive health URL from the same base (strip /api/v1 suffix)
+  const healthUrl = BASE.replace(/\/api\/v1\/?$/, '') + '/health';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(healthUrl, { method: 'HEAD', signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface OverviewStats {
   totalRequests: number; allowedCount: number; blockedCount: number;
   blockRate: number; avgResponseMs: number; activeUsers: number;
