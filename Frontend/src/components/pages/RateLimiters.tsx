@@ -610,15 +610,24 @@ export default function RateLimiters() {
       const reqMinFromEvents = endpointEvents.length;
       const reqMin = Math.max(card.reqMin ?? 0, reqMinFromEvents);
 
-      // used: prefer backend (Redis / clock-aligned Mongo). If backend says 0
-      // but we have live events this minute, use event count capped at limit so
-      // the circle stays filled until the minute boundary.
-      const usedFromEvents = Math.min(reqMinFromEvents, card.total > 0 ? card.total : reqMinFromEvents);
-      const used      = card.used > 0 ? card.used : usedFromEvents;
-      const remaining = Math.max(0, card.total - used);
+      // used: backend value takes priority when > 0 (Redis is fresh).
+      // When backend returns used=0 (Redis expired or evicted mid-minute),
+      // derive used from the best available count:
+      //   • reqMinFromEvents (live MongoDB events filtered to this minute)
+      //   • card.reqMin from backend (mongoHits fallback — always populated)
+      // Only use backend reqMin when bucketStart matches the current minute
+      // so stale data from the previous window doesn't bleed through.
+      const isCurrentBucket = card.bucketStart === minuteStart;
+      const reqMinBest = isCurrentBucket
+        ? Math.max(reqMinFromEvents, card.reqMin ?? 0)
+        : reqMinFromEvents;
+      const usedFromReqMin = Math.min(reqMinBest, card.total > 0 ? card.total : reqMinBest);
+      const used       = card.used > 0 ? card.used : usedFromReqMin;
+      const remaining  = Math.max(0, card.total - used);
       const saturation = card.total > 0 ? Math.min(100, Math.round((used / card.total) * 1000) / 10) : 0;
 
       return { ...card, used, remaining, saturation, reqMin };
+
 
     });
 
