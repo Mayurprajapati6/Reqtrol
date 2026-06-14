@@ -253,14 +253,17 @@ const AnalyticsService = {
 
     return rows.map((row) => {
       const live = row.endpoint ? liveWindows.get(row.endpoint) : undefined;
-      // BUG FIX: live is always pre-populated with currentHits=0, so `live?.currentHits ?? x`
-      // NEVER falls back to x because 0 is not null/undefined. Use explicit > 0 guard so that
-      // MongoDB's rolling-window count acts as the true fallback when Redis has no data.
-      const liveHits   = live?.currentHits ?? 0;
-      const mongoHits  = row.currentHits   ?? 0;
-      const currentHits = liveHits > 0 ? liveHits : mongoHits;
-      const liveReqMin  = live?.reqMin ?? 0;
-      const reqMin      = liveReqMin > 0 ? liveReqMin : mongoHits; // use mongo rolling count when Redis is 0
+      // currentHits: use Redis ONLY — it is the rate-limit source of truth.
+      // MongoDB is NOT used as a fallback here because it can have 2 documents
+      // per request when Quby applies reqtrolRateLimiter more than once per route,
+      // which would show 2/5 for a single user action.
+      // If Redis is 0 (key expired or not yet written), we correctly show 0.
+      const currentHits = live?.currentHits ?? 0;        // pure Redis
+      const liveReqMin  = live?.reqMin      ?? 0;        // pure Redis
+      // reqMin: fall back to MongoDB count only if Redis has no data,
+      // so the frontend can at least show recent activity in the minute display.
+      const mongoHits   = row.currentHits ?? 0;
+      const reqMin      = liveReqMin > 0 ? liveReqMin : mongoHits;
       const limit = row.limit ?? 0;
       const remaining = Math.max(0, limit - currentHits);
       return {
