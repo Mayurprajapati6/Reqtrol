@@ -204,32 +204,32 @@ function SectionShell({ index, title, subtitle, children, action }: {
 
 // ─── CircularUsage ────────────────────────────────────────────────────────────
 function CircularUsage({ pct, color, state }: { pct: number; color: string; state: LimiterState }) {
-  const radius        = 72;
+  const radius        = 58;
   const circumference = 2 * Math.PI * radius;
   const clampedPct    = Math.min(100, Math.max(0, pct));
   const offset        = circumference - (clampedPct / 100) * circumference;
   return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', margin: '10px auto 12px' }}>
+    <div style={{ position: 'relative', width: '100%', maxWidth: 160, aspectRatio: '1 / 1', margin: '8px auto 10px' }}>
       <svg viewBox="0 0 160 160" width="100%" height="100%" style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
-        <circle cx="80" cy="80" r={radius} stroke="rgba(148,163,184,0.13)" strokeWidth="14" fill="none" />
+        <circle cx="80" cy="80" r={radius} stroke="rgba(148,163,184,0.13)" strokeWidth="12" fill="none" />
         <motion.circle
           cx="80" cy="80" r={radius}
-          stroke={color} strokeWidth="14" fill="none" strokeLinecap="round"
+          stroke={color} strokeWidth="12" fill="none" strokeLinecap="round"
           strokeDasharray={circumference}
           animate={{ strokeDashoffset: offset }}
           transition={{ duration: 0.45, ease: 'easeOut' }}
-          style={{ filter: `drop-shadow(0 0 10px ${color})` }}
+          style={{ filter: `drop-shadow(0 0 8px ${color})` }}
         />
       </svg>
       {state === 'BYPASSED' ? (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color }}>
-          <InfinityIcon size={52} strokeWidth={2.3} />
+          <InfinityIcon size={42} strokeWidth={2.3} />
         </div>
       ) : (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
           <div>
-            <div style={{ fontSize: 32, lineHeight: 1, fontWeight: 950, color: '#f8fafc' }}>{Math.round(clampedPct)}%</div>
-            <div style={{ color: COLORS.textMuted, fontSize: 10, fontWeight: 800, marginTop: 5, letterSpacing: '0.1em' }}>USED</div>
+            <div style={{ fontSize: 26, lineHeight: 1, fontWeight: 950, color: '#f8fafc' }}>{Math.round(clampedPct)}%</div>
+            <div style={{ color: COLORS.textMuted, fontSize: 9, fontWeight: 800, marginTop: 4, letterSpacing: '0.1em' }}>USED</div>
           </div>
         </div>
       )}

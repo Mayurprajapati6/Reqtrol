@@ -556,7 +556,6 @@ export default function Dashboard() {
                 <Database size={14} color="#10b981" />
               </div>
               {[
-                { label: 'Redis Status',       value: <AnimatedBadge variant={systemStatus.redisStatus} /> },
                 { label: 'Avg Response Time',  value: formatMs(systemStatus.avgResponseMs) },
                 { label: 'Active Endpoints',   value: String(systemStatus.activeEndpoints) },
                 { label: 'Limiter Hits',       value: formatNumber(systemStatus.totalLimiterHits) },
@@ -572,7 +571,6 @@ export default function Dashboard() {
               <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 }}>System Status</div>
               {[
                 { label: 'API Server', value: systemStatus.apiServerStatus },
-                { label: 'Redis',      value: systemStatus.redisStatus      },
                 { label: 'Database',   value: systemStatus.databaseStatus   },
               ].map((s) => (
                 <div key={s.label} style={{ padding: '9px 0', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
