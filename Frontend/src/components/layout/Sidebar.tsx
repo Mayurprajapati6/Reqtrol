@@ -40,7 +40,6 @@ const NAV: NavSection[] = [
     items: [
       { path: '/simulator',   icon: Zap,       label: 'Simulator' },
       { path: '/integration', icon: GitMerge,  label: 'Integration Flow' },
-      { path: '/settings',    icon: Settings,  label: 'Settings' },
     ],
   },
 ];

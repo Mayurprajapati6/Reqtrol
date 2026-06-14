@@ -8,7 +8,6 @@ import UserActivity     from '@/components/pages/UserActivity';
 import RedisMonitor     from '@/components/pages/RedisMonitor';
 import Simulator        from '@/components/pages/Simulator';
 import IntegrationFlow  from '@/components/pages/IntegrationFlow';
-import Settings         from '@/components/pages/Settings';
 import ScrollToTop from '@/components/routing/ScrollToTop';
 
 export default function AppRoutes() {
@@ -24,7 +23,6 @@ export default function AppRoutes() {
           <Route path="/users"           element={<UserActivity />} />
           <Route path="/simulator"       element={<Simulator />} />
           <Route path="/integration"     element={<IntegrationFlow />} />
-          <Route path="/settings"        element={<Settings />} />
           <Route path="*"               element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>

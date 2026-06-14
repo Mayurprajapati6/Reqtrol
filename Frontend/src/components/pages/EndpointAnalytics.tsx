@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useCallback } from 'react';
+import { memo, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -86,10 +86,68 @@ const HeatmapDatePicker = memo(function HeatmapDatePicker({ value, onChange }: {
   const daysInMonth = getDaysInMonth(currentMonth.year, currentMonth.month);
   const firstDay = getFirstDayOfMonth(currentMonth.year, currentMonth.month);
   const todayDate = new Date();
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLDivElement | null>(null);
+  const [popupCoords, setPopupCoords] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node) && triggerRef.current && !triggerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const updatePosition = () => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const minWidth = 280;
+      let left = rect.right - minWidth;
+      if (left < 8) left = rect.left;
+      if (left + minWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minWidth - 8);
+      const top = rect.bottom + 8;
+      setPopupCoords({ top, left });
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const updatePosition = () => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const minWidth = 280;
+      let left = rect.right - minWidth;
+      if (left < 8) left = rect.left;
+      if (left + minWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minWidth - 8);
+      const top = rect.bottom + 8;
+      setPopupCoords({ top, left });
+    };
+
+    updatePosition();
+    const ro = new ResizeObserver(updatePosition);
+    ro.observe(document.body);
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isOpen]);
   
   return (
     <div style={{ position: 'relative' }}>
       <div
+        ref={triggerRef}
         onClick={() => setIsOpen(!isOpen)}
         style={{
           display: 'flex',
@@ -111,19 +169,26 @@ const HeatmapDatePicker = memo(function HeatmapDatePicker({ value, onChange }: {
         <span style={{ color: '#06b6d4' }}>{displayDate}</span>
       </div>
       
-      {isOpen && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 8px)',
-          right: 0,
-          background: '#080d1a',
-          border: '1px solid rgba(6,182,212,0.25)',
-          borderRadius: 8,
-          padding: 12,
-          zIndex: 100,
-          minWidth: 280,
-          boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-        }}>
+      {isOpen && createPortal(
+        <div
+          ref={wrapperRef}
+          style={{
+            position: 'fixed',
+            top: popupCoords ? popupCoords.top : '50px',
+            left: popupCoords ? popupCoords.left : '50px',
+            background: '#080d1a',
+            border: '1px solid rgba(6,182,212,0.25)',
+            borderRadius: 8,
+            padding: 12,
+            zIndex: 100,
+            minWidth: 280,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+            overflowY: 'auto',
+            maxHeight: '420px',
+            overscrollBehavior: 'contain',
+          }}
+          onWheel={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        >
           {/* Month Navigation */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <button
@@ -207,7 +272,7 @@ const HeatmapDatePicker = memo(function HeatmapDatePicker({ value, onChange }: {
               );
             })}
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );
