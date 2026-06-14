@@ -871,13 +871,11 @@ export const LimiterRepository = {
       // engine and the Minute Timeline chart. Resets exactly at :00 of each minute.
       const bucketStart = Math.floor(now / cfg.windowMs) * cfg.windowMs;
       const since = new Date(bucketStart);
-      const match = {
-        ...matchFor({ scope: 'global', source }),
-        limiterName: cfg.limiterName,
-        timestamp: { $gte: since },
-      };
       const [stats] = await RequestLog.aggregate([
-        { $match: match },
+        { $match: {
+          ...matchFor({ scope: 'global', source }),
+          timestamp: { $gte: since },
+        } },
         { $match: { $expr: { $eq: [endpointExpression, cfg.endpoint] } } },
         {
           $group: {
@@ -889,8 +887,8 @@ export const LimiterRepository = {
       ]);
       const [latest] = await RequestLog.aggregate([
         { $match: {
-        ...matchFor({ scope: 'global', source }),
-        limiterName: cfg.limiterName,
+          ...matchFor({ scope: 'global', source }),
+          timestamp: { $gte: since },
         } },
         { $match: { $expr: { $eq: [endpointExpression, cfg.endpoint] } } },
         { $sort: { timestamp: -1 } },

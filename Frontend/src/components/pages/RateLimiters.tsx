@@ -146,6 +146,7 @@ function buildTimelineData(
   events: LiveEvent[],
   realCards: LimiterCard[],
   minuteStart: number,
+  currentMs: number,
 ): ChartPoint[] {
   // Pre-allocate 60 zero-filled slots
   const slots: ChartPoint[] = Array.from({ length: 60 }, (_, s) => {
@@ -154,10 +155,14 @@ function buildTimelineData(
     return pt;
   });
 
+  // Clamp to the current client-side second to prevent server clock drift
+  // from showing "future" data points (e.g., server at :47 while client shows s44/59).
+  const maxSecond = Math.min(59, Math.floor((currentMs - minuteStart) / 1000));
+
   for (const event of events) {
     const eventMs = new Date(event.timestamp).getTime();
     const s = Math.floor((eventMs - minuteStart) / 1000);
-    if (s < 0 || s > 59) continue; // outside current minute — skip
+    if (s < 0 || s > maxSecond) continue; // outside current minute window — skip
     const ep   = normalizeEventEndpoint(event.endpoint);
     const card = realCards.find((c) => c.endpoint === ep);
     if (!card) continue;
@@ -661,7 +666,7 @@ export default function RateLimiters() {
   // Timeline chart — pure rebuild every second from live events
   // Minute rollover: minuteStart changes → all slots reset to 0 automatically
   const timelineData = useMemo(
-    () => buildTimelineData(liveEvents, realCards, minuteStart),
+    () => buildTimelineData(liveEvents, realCards, minuteStart, currentSecond),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [liveEvents, realCards, minuteStart, currentSecond],
   );
