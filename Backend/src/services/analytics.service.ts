@@ -133,17 +133,26 @@ async function getLiveLimiterWindows(configs: LimitConfig[]): Promise<Map<string
         current.bucketStart = bucketStart;
         current.bucketEnd   = bucketEnd;
       } else if (algorithmToken === 'sw') {
-        // ── Clock-aligned read (pure, non-destructive) ─────────────────────────
-        // Count only entries whose score (timestamp) falls within the current
-        // clock-aligned bucket [bucketStart, now].  This makes every sliding-window
-        // limiter reset to 0 at the top of the minute just like fixed-window ones.
-        // We do NOT call zremrangebyscore here — that lives in the engine only.
-        const clockCount = await redis.zcount(key, bucketStart, now);
-        current.currentHits = clockCount;
-        current.reqMin      = clockCount;
-        current.resetAt     = bucketEnd;
-        current.bucketStart = bucketStart;
-        current.bucketEnd   = bucketEnd;
+        // ── True rolling window read (non-destructive) ────────────────────────
+        // Use (now - windowMs) as the lower bound — this is consistent with how
+        // the sliding window algorithm actually works. Using a clock-aligned
+        // bucketStart would cause all entries to appear as 0 the moment the
+        // clock-minute rolls over (e.g., simulation at 20:17:50 shows 0 at 20:18:02).
+        const rollingWindowStart = now - windowMs;
+        const rollingCount = await redis.zcount(key, rollingWindowStart, now);
+        current.currentHits = rollingCount;
+        current.reqMin      = rollingCount;
+        // resetAt: when will the oldest entry in the current window expire?
+        // Look at the oldest entry in the sorted set
+        const oldest = await redis.zrange(key, 0, 0, 'WITHSCORES');
+        if (oldest.length >= 2) {
+          const oldestScore = Number(oldest[1]);
+          current.resetAt = oldestScore + windowMs;
+        } else {
+          current.resetAt = bucketEnd;
+        }
+        current.bucketStart = rollingWindowStart;
+        current.bucketEnd   = now;
       }
 
       windows.set(cfg.endpoint, current);

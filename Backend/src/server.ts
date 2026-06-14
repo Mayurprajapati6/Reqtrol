@@ -2,6 +2,8 @@ import express from 'express';
 import cors    from 'cors';
 import helmet  from 'helmet';
 import morgan  from 'morgan';
+import http    from 'http';
+import https   from 'https';
 
 import { config }                      from './config';
 import logger                          from './config/logger';
@@ -58,6 +60,34 @@ async function start(): Promise<void> {
     console.log('\n✅  Reqtrol running');
     console.log(`   API    → http://localhost:${config.PORT}/api/v1`);
     console.log(`   Health → http://localhost:${config.PORT}/health\n`);
+
+    // ── Keep-alive self-ping (prevents Render free-tier cold start) ─────────
+    // Render spins down free instances after 15 min of inactivity.
+    // Ping /health every 10 minutes to keep the instance warm.
+    const PING_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+    const selfPing = () => {
+      try {
+        const selfUrl = process.env.RENDER_EXTERNAL_URL
+          ? `${process.env.RENDER_EXTERNAL_URL}/health`
+          : `http://localhost:${config.PORT}/health`;
+        const client = selfUrl.startsWith('https') ? https : http;
+        const req = client.get(selfUrl, (res) => {
+          res.resume(); // drain response body
+          logger.info(`[KeepAlive] Self-ping OK → HTTP ${res.statusCode}`);
+        });
+        req.on('error', (err) => {
+          logger.warn(`[KeepAlive] Self-ping failed: ${err.message}`);
+        });
+        req.setTimeout(10_000, () => {
+          req.destroy();
+          logger.warn('[KeepAlive] Self-ping timed out');
+        });
+      } catch (err) {
+        logger.warn(`[KeepAlive] Self-ping error: ${(err as Error).message}`);
+      }
+    };
+    setInterval(selfPing, PING_INTERVAL_MS);
+    logger.info('[KeepAlive] Self-ping scheduled every 10 minutes');
   });
 }
 

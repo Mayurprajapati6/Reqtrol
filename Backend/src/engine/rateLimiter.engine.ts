@@ -134,6 +134,7 @@ export async function slidingWindow(
   const now         = Date.now();
   const windowStart = now - cfg.windowMs;
   const windowKey   = `rt:sw:global:${endpoint}`;
+  const secKey      = `rt:sec:${endpoint}`;
   const windowSec   = Math.floor(cfg.windowMs / 1000);
 
   const pipeline = redis.pipeline();
@@ -141,6 +142,9 @@ export async function slidingWindow(
   pipeline.zcard(windowKey);                                  // count in window
   pipeline.zadd(windowKey, now, `${now}-${Math.random()}`);  // add this request
   pipeline.expire(windowKey, windowSec * 2);                 // keep key alive
+  // Track per-second hit for rolling req/sec calculation (12s TTL) — same as fixedWindow
+  pipeline.zadd(secKey, now, `${now}-${Math.random().toString(36).slice(2)}`);
+  pipeline.expire(secKey, 12);
   const results = await pipeline.exec();
 
   const countBeforeAdd = (results?.[1]?.[1] as number) ?? 0;
