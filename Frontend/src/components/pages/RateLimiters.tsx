@@ -204,32 +204,32 @@ function SectionShell({ index, title, subtitle, children, action }: {
 
 // ─── CircularUsage ────────────────────────────────────────────────────────────
 function CircularUsage({ pct, color, state }: { pct: number; color: string; state: LimiterState }) {
-  const radius       = 43;
+  const radius        = 72;
   const circumference = 2 * Math.PI * radius;
-  const clampedPct   = Math.min(100, Math.max(0, pct));
-  const offset       = circumference - (clampedPct / 100) * circumference;
+  const clampedPct    = Math.min(100, Math.max(0, pct));
+  const offset        = circumference - (clampedPct / 100) * circumference;
   return (
-    <div style={{ position: 'relative', width: 112, height: 112, margin: '8px auto 10px' }}>
-      <svg viewBox="0 0 112 112" width="112" height="112" style={{ transform: 'rotate(-90deg)', overflow: 'hidden' }}>
-        <circle cx="56" cy="56" r={radius} stroke="rgba(148,163,184,0.13)" strokeWidth="10" fill="none" />
+    <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', margin: '10px auto 12px' }}>
+      <svg viewBox="0 0 160 160" width="100%" height="100%" style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
+        <circle cx="80" cy="80" r={radius} stroke="rgba(148,163,184,0.13)" strokeWidth="14" fill="none" />
         <motion.circle
-          cx="56" cy="56" r={radius}
-          stroke={color} strokeWidth="10" fill="none" strokeLinecap="round"
+          cx="80" cy="80" r={radius}
+          stroke={color} strokeWidth="14" fill="none" strokeLinecap="round"
           strokeDasharray={circumference}
           animate={{ strokeDashoffset: offset }}
           transition={{ duration: 0.45, ease: 'easeOut' }}
-          style={{ filter: `drop-shadow(0 0 8px ${color})` }}
+          style={{ filter: `drop-shadow(0 0 10px ${color})` }}
         />
       </svg>
       {state === 'BYPASSED' ? (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color }}>
-          <InfinityIcon size={44} strokeWidth={2.3} />
+          <InfinityIcon size={52} strokeWidth={2.3} />
         </div>
       ) : (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
           <div>
-            <div style={{ fontSize: 27, lineHeight: 1, fontWeight: 950, color: '#f8fafc' }}>{Math.round(clampedPct)}%</div>
-            <div style={{ color: COLORS.textMuted, fontSize: 9, fontWeight: 800, marginTop: 4, letterSpacing: '0.1em' }}>USED</div>
+            <div style={{ fontSize: 32, lineHeight: 1, fontWeight: 950, color: '#f8fafc' }}>{Math.round(clampedPct)}%</div>
+            <div style={{ color: COLORS.textMuted, fontSize: 10, fontWeight: 800, marginTop: 5, letterSpacing: '0.1em' }}>USED</div>
           </div>
         </div>
       )}
@@ -238,6 +238,7 @@ function CircularUsage({ pct, color, state }: { pct: number; color: string; stat
 }
 
 // ─── Metric cell ──────────────────────────────────────────────────────────────
+
 function Metric({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ minWidth: 0 }}>

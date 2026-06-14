@@ -867,7 +867,10 @@ export const LimiterRepository = {
   async getConfiguredLimiterAggregation(configs: LimiterConfigInput[], source: AnalyticsSource = 'all'): Promise<LimiterAggRow[]> {
     const now = Date.now();
     return Promise.all(configs.map(async (cfg) => {
-      const since = new Date(now - cfg.windowMs);
+      // Clock-aligned bucket start — same boundary used by the fixed/sliding window
+      // engine and the Minute Timeline chart. Resets exactly at :00 of each minute.
+      const bucketStart = Math.floor(now / cfg.windowMs) * cfg.windowMs;
+      const since = new Date(bucketStart);
       const match = {
         ...matchFor({ scope: 'global', source }),
         limiterName: cfg.limiterName,
