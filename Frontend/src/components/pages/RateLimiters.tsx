@@ -591,11 +591,11 @@ export default function RateLimiters() {
   const liveEvents = eventsQuery.data ?? [];
 
   // Enrich cards with the most recent live-event data for sub-second accuracy.
-  // Cards are enriched with live-event data (MongoDB) for the current clock-minute.
-  // Live events drive reqMin to match the Minute Timeline chart exactly.
-  // used/remaining come from the backend (Redis first, MongoDB clock-aligned fallback)
-  // and are NOT overridden here — overriding from bestEvent.remaining caused 2x counts
-  // when Quby calls /check multiple times per user action (session check + API call).
+  // Cards are enriched with live-event data for the current clock-minute.
+  // reqMin always reflects live event count (matches Minute Timeline).
+  // used: use backend value when > 0 (Redis is fresh). When backend returns 0
+  // but live events show requests this minute (Redis key expired early or timing
+  // gap between engine incr and getLimiters poll), derive used from event count.
   const cards = useMemo(() => {
     const recentEvents = liveEvents.filter(
       (e) => new Date(e.timestamp).getTime() >= minuteStart,
@@ -603,15 +603,21 @@ export default function RateLimiters() {
     return rawCards.map((card) => {
       if (isWebhook(card)) return card;
 
-      // reqMin: count live events in the current minute — matches the Minute Timeline
+      // reqMin: count live events in the current minute
       const endpointEvents = recentEvents.filter(
         (e) => normalizeEventEndpoint(e.endpoint) === card.endpoint,
       );
       const reqMinFromEvents = endpointEvents.length;
       const reqMin = Math.max(card.reqMin ?? 0, reqMinFromEvents);
 
-      // used & remaining come entirely from the backend — no override here
-      return { ...card, reqMin };
+      // used: prefer backend (Redis / clock-aligned Mongo). If backend says 0
+      // but we have live events this minute, use event count capped at limit so
+      // the circle stays filled until the minute boundary.
+      const usedFromEvents = Math.min(reqMinFromEvents, card.total > 0 ? card.total : reqMinFromEvents);
+      const used = card.used > 0 ? card.used : usedFromEvents;
+      const remaining = Math.max(0, card.total - used);
+
+      return { ...card, used, remaining, reqMin };
     });
 
   }, [rawCards, liveEvents, minuteStart]);
