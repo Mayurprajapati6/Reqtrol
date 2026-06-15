@@ -87,7 +87,10 @@ export async function fixedWindow(
   // Clock-aligned window boundary (top of minute for 1-minute windows)
   const windowStartMs = Math.floor(now / (windowSec * 1000)) * (windowSec * 1000);
   const windowEndMs   = windowStartMs + (windowSec * 1000);
-  const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
+  
+  // Use UTC seconds calculation to avoid timezone issues
+  const currentSecond = Math.floor((now / 1000) % 60);
+  const resetIn       = Math.max(1, 60 - currentSecond);
 
   // Include clock boundary in key to ensure automatic reset at minute boundary
   const windowKey  = `rt:fw:global:${endpoint}:${windowStartMs}`;
@@ -135,9 +138,8 @@ export async function slidingWindow(
   const windowSec   = Math.floor(cfg.windowMs / 1000);
 
   // CRITICAL FIX: Calculate resetIn to NEXT clock boundary (:00 seconds)
-  // NOT from current window start - always show time until next :00 second
-  const nowDate       = new Date(now);
-  const currentSecond = nowDate.getSeconds();
+  // Use UTC seconds to avoid timezone issues between client and server
+  const currentSecond = Math.floor((now / 1000) % 60);
   const resetIn       = Math.max(1, 60 - currentSecond);
 
   // Debug log for verification
