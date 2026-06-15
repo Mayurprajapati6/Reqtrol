@@ -44,10 +44,17 @@ export const flushRedisController = async (
 ): Promise<void> => {
   try {
     const count = await flushAllKeys();
+    
+    // Also clear MongoDB request logs from the last hour to prevent stale fallback data
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const { default: RequestLog } = await import('../models/RequestLog.model');
+    const mongoDeleted = await RequestLog.deleteMany({ timestamp: { $gte: oneHourAgo } });
+    
     res.status(200).json({ 
       success: true, 
-      message: `Flushed ${count} Redis keys`, 
-      keysDeleted: count 
+      message: `Flushed ${count} Redis keys and ${mongoDeleted.deletedCount} MongoDB logs`, 
+      keysDeleted: count,
+      mongoLogsDeleted: mongoDeleted.deletedCount
     });
   } catch (err) {
     next(err);
