@@ -154,13 +154,27 @@ function buildTimelineData(
     return pt;
   });
 
+  const minuteEnd = minuteStart + 60_000;
+  
   console.log('[Timeline] Building chart data:', {
     minuteStart: new Date(minuteStart).toISOString(),
-    eventCount: events.length,
+    minuteEnd: new Date(minuteEnd).toISOString(),
+    totalEvents: events.length,
     now: new Date().toISOString()
   });
 
-  for (const event of events) {
+  // CRITICAL: Only show events from CURRENT minute
+  const currentMinuteEvents = events.filter(event => {
+    const eventMs = new Date(event.timestamp).getTime();
+    return eventMs >= minuteStart && eventMs < minuteEnd;
+  });
+  
+  console.log('[Timeline] Filtered to current minute:', {
+    currentMinuteEvents: currentMinuteEvents.length,
+    filtered: events.length - currentMinuteEvents.length
+  });
+
+  for (const event of currentMinuteEvents) {
     const eventMs = new Date(event.timestamp).getTime();
     const s = Math.floor((eventMs - minuteStart) / 1000);
     
@@ -175,7 +189,7 @@ function buildTimelineData(
       });
     }
     
-    if (s < 0 || s > 59) continue; // outside current minute — skip
+    if (s < 0 || s > 59) continue; // outside current minute — skip (should never happen now)
     const ep   = normalizeEventEndpoint(event.endpoint);
     const card = realCards.find((c) => c.endpoint === ep);
     if (!card) continue;
