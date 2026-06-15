@@ -146,7 +146,6 @@ function buildTimelineData(
   events: LiveEvent[],
   realCards: LimiterCard[],
   minuteStart: number,
-  maxSecond: number,   // current second of the minute (0-59) from client clock
 ): ChartPoint[] {
   // Pre-allocate 60 zero-filled slots
   const slots: ChartPoint[] = Array.from({ length: 60 }, (_, s) => {
@@ -155,14 +154,10 @@ function buildTimelineData(
     return pt;
   });
 
-  // Only render up to the current second (client clock) to avoid showing
-  // "future" data points when the server clock is slightly ahead of the client.
-  const clamp = Math.min(59, Math.max(0, maxSecond));
-
   for (const event of events) {
     const eventMs = new Date(event.timestamp).getTime();
     const s = Math.floor((eventMs - minuteStart) / 1000);
-    if (s < 0 || s > clamp) continue; // outside rendered window — skip
+    if (s < 0 || s > 59) continue; // outside current minute — skip
     const ep   = normalizeEventEndpoint(event.endpoint);
     const card = realCards.find((c) => c.endpoint === ep);
     if (!card) continue;
