@@ -377,9 +377,16 @@ function ChartTooltip({
   minuteStart: number;
 }) {
   if (!active || !payload?.length || label == null) return null;
+  
   // label is the second (0-59), minuteStart is the minute boundary in ms
   const secondInMs = (label as number) * 1000;
-  const timestamp = fmtIST(minuteStart + secondInMs);
+  const slotTimestamp = minuteStart + secondInMs;
+  const now = Date.now();
+  
+  // Don't show tooltip for future seconds that haven't occurred yet
+  if (slotTimestamp > now) return null;
+  
+  const timestamp = fmtIST(slotTimestamp);
   const total = payload.reduce((s, p) => s + (p.value ?? 0), 0);
   
   // Extract just HH:MM:SS for cleaner display
@@ -629,11 +636,11 @@ export default function RateLimiters() {
       // reqMin: best of backend + live events
       const reqMin = Math.max(card.reqMin ?? 0, eventsThisMin);
 
-      // used: trust backend ONLY if it's from current minute AND non-zero
-      //       Otherwise derive from live events in current minute
-      const used = (backendIsCurrentMinute && card.used > 0)
-          ? card.used
-          : Math.min(eventsThisMin, card.total > 0 ? card.total : eventsThisMin);
+      // CRITICAL FIX: When minute changes, FORCE reset to 0 or live events count
+      // Don't trust backend data from previous minute even if it's non-zero
+      const used = backendIsCurrentMinute
+          ? (card.used ?? 0)  // Trust backend when it's from current minute
+          : eventsThisMin;     // Use live events when backend is stale
 
       const remaining  = Math.max(0, card.total - used);
       const saturation = card.total > 0
