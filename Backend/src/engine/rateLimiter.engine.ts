@@ -149,20 +149,19 @@ export async function slidingWindow(
   const windowKey   = `rt:sw:global:${endpoint}:${bucketStart}`;  // Include timestamp in key
   const secKey      = `rt:sec:${endpoint}`;
 
-  // Calculate resetIn from clock boundary
-  const currentSecond = Math.floor((now / 1000) % 60);
-  const resetIn       = Math.max(1, 60 - currentSecond);
-
-  // Debug log for verification
-  console.log(`[DEBUG] SlidingWindow ${endpoint}: now=${now}, bucket=${bucketStart}, currentSecond=${currentSecond}, resetIn=${resetIn}s`);
+  // Calculate TTL: time remaining until window ends (not a fixed 60s!)
+  const ttlSeconds = Math.ceil((bucketEnd - now) / 1000);
+  
+  // Calculate resetIn: seconds until window ends
+  const resetIn = Math.max(1, ttlSeconds);
 
   const pipeline = redis.pipeline();
   // Count current entries in THIS bucket only (entries added in current minute)
   pipeline.zcount(windowKey, bucketStart, now);
   // Add this request with timestamp score
   pipeline.zadd(windowKey, now, `${now}-${Math.random()}`);
-  // Set TTL to expire at end of minute
-  pipeline.expire(windowKey, windowSec + 10);  // +10s buffer for safety
+  // Set TTL to expire EXACTLY at window boundary
+  pipeline.expire(windowKey, ttlSeconds);
   // Track per-second hit for rolling req/sec calculation (12s TTL)
   pipeline.zadd(secKey, now, `${now}-${Math.random().toString(36).slice(2)}`);
   pipeline.expire(secKey, 12);
@@ -170,6 +169,13 @@ export async function slidingWindow(
 
   const countBeforeAdd = (results?.[0]?.[1] as number) ?? 0;
   const allowed        = countBeforeAdd < cfg.max;
+
+  // Debug logging
+  if (countBeforeAdd === 0) {
+    console.log(`[SlidingWindow] NEW WINDOW for ${endpoint}: key=${windowKey}, TTL=${ttlSeconds}s (expires at ${new Date(bucketEnd).toISOString()}), bucket=${new Date(bucketStart).toISOString()}, userId=${userId}`);
+  } else {
+    console.log(`[SlidingWindow] ${endpoint}: count=${countBeforeAdd + 1}, key=${windowKey}, bucket=${new Date(bucketStart).toISOString()}, userId=${userId}`);
+  }
 
   // If over limit, remove the entry we just added
   if (!allowed) {
