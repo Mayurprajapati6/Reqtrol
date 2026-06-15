@@ -40,11 +40,21 @@ export const checkLimitController = async (
 };
 
 export const flushKeysController = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
+    // Allow CORS for this endpoint
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    if (req.method === 'OPTIONS') {
+      res.status(200).end();
+      return;
+    }
+    
     const count = await flushAllKeys();
     res.json({ success: true, message: `Flushed ${count} Redis keys`, keysDeleted: count });
   } catch (err) {
