@@ -22,7 +22,14 @@ const LIM_SLOW = { staleTime: 30_000, refetchInterval: 30_000, retry: 1 };
 
 export function useLimiterCards(source: AnalyticsSource = 'all') {
   const { pollingIntervalMs, realtimeEnabled } = useAppSettingsStore();
-  return useQuery({ queryKey: limiterKeys.cards(source), queryFn: () => getLimiterCards(source), ...LIM_LIVE, ...realtimeQueryPolicy, placeholderData: previous => previous, refetchInterval: realtimeEnabled ? Math.max(pollingIntervalMs, 10_000) : false });
+  // Don't use placeholderData - we want immediate updates on minute boundary changes
+  return useQuery({ 
+    queryKey: limiterKeys.cards(source), 
+    queryFn: () => getLimiterCards(source), 
+    ...LIM_LIVE, 
+    ...realtimeQueryPolicy, 
+    refetchInterval: realtimeEnabled ? Math.max(pollingIntervalMs, 10_000) : false 
+  });
 }
 export function useLimiterRules(source: AnalyticsSource = 'all') {
   const { chartRefreshIntervalMs, realtimeEnabled } = useAppSettingsStore();
