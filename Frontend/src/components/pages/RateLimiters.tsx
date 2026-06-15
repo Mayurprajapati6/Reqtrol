@@ -603,6 +603,7 @@ export default function RateLimiters() {
   const cards = useMemo(() => {
     const nowMs        = Date.now();
     const bucketStart  = Math.floor(nowMs / 60000) * 60000;   // clock-aligned minute start
+    const bucketEnd    = bucketStart + 60000;
 
     // Filter events to only those within the CURRENT minute
     const recentEvents = liveEvents.filter(
@@ -617,13 +618,20 @@ export default function RateLimiters() {
         (e) => normalizeEventEndpoint(e.endpoint) === card.endpoint,
       ).length;
 
+      // CRITICAL FIX: Check if backend data is from CURRENT minute bucket
+      // If bucketStart/bucketEnd from backend matches current minute, trust it
+      // Otherwise, backend is returning stale data from previous minute
+      const backendIsCurrentMinute = 
+        card.bucketStart && card.bucketEnd &&
+        card.bucketStart === bucketStart && 
+        card.bucketEnd === bucketEnd;
+
       // reqMin: best of backend + live events
       const reqMin = Math.max(card.reqMin ?? 0, eventsThisMin);
 
-      // used: trust backend when non-zero (Redis live or MongoDB fallback)
-      //       If backend returned 0, derive from events capped at limit
-      const used =
-        card.used > 0
+      // used: trust backend ONLY if it's from current minute AND non-zero
+      //       Otherwise derive from live events in current minute
+      const used = (backendIsCurrentMinute && card.used > 0)
           ? card.used
           : Math.min(eventsThisMin, card.total > 0 ? card.total : eventsThisMin);
 
