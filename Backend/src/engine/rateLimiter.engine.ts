@@ -105,9 +105,9 @@ export async function fixedWindow(
   if (count === 1) {
     // First request in this window - set TTL to expire at window boundary
     await redis.expire(windowKey, ttlSeconds);
-    console.log(`[FixedWindow] NEW WINDOW for ${endpoint}: key=${windowKey}, TTL=${ttlSeconds}s (expires at ${new Date(windowEndMs).toISOString()}), bucket=${new Date(windowStartMs).toISOString()}`);
+    console.log(`[FixedWindow] NEW WINDOW for ${endpoint}: key=${windowKey}, TTL=${ttlSeconds}s (expires at ${new Date(windowEndMs).toISOString()}), bucket=${new Date(windowStartMs).toISOString()}, userId=${userId}`);
   } else {
-    console.log(`[FixedWindow] ${endpoint}: count=${count}, key=${windowKey}, bucket=${new Date(windowStartMs).toISOString()}`);
+    console.log(`[FixedWindow] ${endpoint}: count=${count}, key=${windowKey}, bucket=${new Date(windowStartMs).toISOString()}, userId=${userId}`);
   }
   
   // Track per-second hit for rolling req/sec calculation (12s TTL)
