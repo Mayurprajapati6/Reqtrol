@@ -17,8 +17,14 @@ export function allowedCount(totalRequests: number, blocked: number): number {
 export function limiterUsed(endpoint: ActiveEndpoint, requests: number, remaining?: number): number {
   const limit = ENDPOINT_REGISTRY[endpoint].limit;
   if (!limit) return 0;
-  if (Number.isFinite(remaining)) return Math.max(0, Math.min(limit, limit - Math.max(0, remaining ?? limit)));
-  return Math.max(0, Math.min(limit, requests));
+  
+  // CRITICAL FIX: Don't cap used at limit! Show actual count even if over limit.
+  // If remaining is provided, calculate used as (limit - remaining)
+  // Otherwise, use requests directly (already the actual count from Redis)
+  if (Number.isFinite(remaining)) {
+    return Math.max(0, limit - Math.max(0, remaining ?? limit));
+  }
+  return Math.max(0, requests);  // Don't cap at limit!
 }
 
 export function limiterRemaining(endpoint: ActiveEndpoint, used: number): number {
