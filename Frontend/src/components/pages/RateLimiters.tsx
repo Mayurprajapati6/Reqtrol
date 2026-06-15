@@ -730,7 +730,7 @@ export default function RateLimiters() {
   const realCards = useMemo(() => cards.filter((c) => !isWebhook(c)), [cards]);
 
   // Timeline chart — pure rebuild every second from live events
-  // Minute rollover: minuteStart changes → all slots reset to 0 automatically
+  // Shows CURRENT minute only (16:20:00 to 16:20:59)
   const timelineData = useMemo(
     () => buildTimelineData(liveEvents, realCards, minuteStart),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -858,17 +858,18 @@ export default function RateLimiters() {
                   axisLine={false}
                 />
                 <Tooltip
+                  cursor={{ stroke: COLORS.cyan, strokeWidth: 1, strokeDasharray: '3 3' }}
                   content={(props) => (
                     <ChartTooltip
                       active={props.active}
-                      payload={props.payload as Array<{ name: string; value: number; color: string }>}
+                      payload={props.payload as Array<{ name: string; value: number; color: string; dataKey?: string }>}
                       label={props.label as number}
                       realCards={realCards}
                       minuteStart={minuteStart}
                     />
                   )}
-                  wrapperStyle={{ background: 'transparent', boxShadow: 'none' }}
-                  contentStyle={{ background: 'transparent' }}
+                  wrapperStyle={{ outline: 'none' }}
+                  isAnimationActive={false}
                 />
                 {realCards.map((card, idx) => {
                   const color = CARD_COLORS[idx % CARD_COLORS.length];
