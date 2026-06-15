@@ -30,6 +30,7 @@ export type CheckLimitOutput = {
   algorithm:      string;
   limiterName:    string;
   responseTimeMs: number;
+  serverTime:     number;  // Server timestamp in ms for client-side sync
 };
 
 const LimiterService = {
@@ -75,6 +76,7 @@ const LimiterService = {
         algorithm: 'none',
         limiterName: metadata.limiterName,
         responseTimeMs: responseMs,
+        serverTime: Date.now(),
       };
     }
 
@@ -121,6 +123,7 @@ const LimiterService = {
         algorithm:      'fixed-window',
         limiterName:    'globalLimiter',
         responseTimeMs: responseMs,
+        serverTime:     Date.now(),
       };
     }
 
@@ -149,6 +152,7 @@ const LimiterService = {
       algorithm:      result.algorithm,
       limiterName:    metadata.limiterName,
       responseTimeMs: responseMs,
+      serverTime:     Date.now(),
     };
   },
 
