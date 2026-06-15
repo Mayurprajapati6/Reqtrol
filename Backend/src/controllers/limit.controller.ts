@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { checkLimitSchema } from '../validators';
 import LimiterService from '../services/limiter.service';
+import { flushAllKeys } from '../engine/rateLimiter.engine';
 
 export const checkLimitController = async (
   req: Request,
@@ -33,6 +34,19 @@ export const checkLimitController = async (
       limiterName:    result.limiterName,
       responseTimeMs: result.responseTimeMs,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const flushKeysController = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const count = await flushAllKeys();
+    res.json({ success: true, message: `Flushed ${count} Redis keys`, keysDeleted: count });
   } catch (err) {
     next(err);
   }
