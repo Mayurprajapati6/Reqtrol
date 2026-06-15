@@ -33,6 +33,7 @@ export const checkLimitController = async (
       algorithm:      result.algorithm,
       limiterName:    result.limiterName,
       responseTimeMs: result.responseTimeMs,
+      serverTime:     result.serverTime,
     });
   } catch (err) {
     next(err);
