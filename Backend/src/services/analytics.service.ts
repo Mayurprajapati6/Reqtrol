@@ -88,7 +88,8 @@ async function getLimiterKeyStats(): Promise<Array<{ name: string; keys: number 
       const bucketStart = Math.floor(now / windowMs) * windowMs;
       
       if (algo.includes('sliding')) {
-        pipeline.exists(`rt:sw:global:${cfg.endpoint}`, `rt:sec:${cfg.endpoint}`);
+        // Sliding window now uses minute-bucketed keys
+        pipeline.exists(`rt:sw:global:${cfg.endpoint}:${bucketStart}`, `rt:sec:${cfg.endpoint}`);
       } else {
         // For fixed window, include clock boundary in key
         pipeline.exists(`rt:fw:global:${cfg.endpoint}:${bucketStart}`, `rt:sec:${cfg.endpoint}`);
@@ -144,7 +145,8 @@ async function getLiveLimiterWindows(configs: LimitConfig[]): Promise<Map<string
         // Include clock boundary in key to match fixedWindow function
         pipeline.get(`rt:fw:global:${cfg.endpoint}:${bucketStart}`);         // index: 2i
       } else {
-        pipeline.zcount(`rt:sw:global:${cfg.endpoint}`, bucketStart, now); // index: 2i
+        // Sliding window now also uses minute-bucketed keys
+        pipeline.zcount(`rt:sw:global:${cfg.endpoint}:${bucketStart}`, bucketStart, now); // index: 2i
       }
       pipeline.zcount(`rt:sec:${cfg.endpoint}`, now - 10_000, now);        // index: 2i+1
     }

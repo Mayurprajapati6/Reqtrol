@@ -132,30 +132,35 @@ export async function slidingWindow(
 ): Promise<LimiterResult> {
   const redis       = getRedis();
   const now         = Date.now();
-  const windowStart = now - cfg.windowMs;
-  const windowKey   = `rt:sw:global:${endpoint}`;
-  const secKey      = `rt:sec:${endpoint}`;
   const windowSec   = Math.floor(cfg.windowMs / 1000);
 
-  // CRITICAL FIX: Calculate resetIn to NEXT clock boundary (:00 seconds)
-  // Use UTC seconds to avoid timezone issues between client and server
+  // CRITICAL FIX: Use clock-aligned buckets like fixed window
+  // This ensures automatic reset at minute boundaries
+  const bucketStart = Math.floor(now / cfg.windowMs) * cfg.windowMs;
+  const bucketEnd   = bucketStart + cfg.windowMs;
+  const windowKey   = `rt:sw:global:${endpoint}:${bucketStart}`;  // Include timestamp in key
+  const secKey      = `rt:sec:${endpoint}`;
+
+  // Calculate resetIn from clock boundary
   const currentSecond = Math.floor((now / 1000) % 60);
   const resetIn       = Math.max(1, 60 - currentSecond);
 
   // Debug log for verification
-  console.log(`[DEBUG] SlidingWindow ${endpoint}: now=${now}, currentSecond=${currentSecond}, resetIn=${resetIn}s`);
+  console.log(`[DEBUG] SlidingWindow ${endpoint}: now=${now}, bucket=${bucketStart}, currentSecond=${currentSecond}, resetIn=${resetIn}s`);
 
   const pipeline = redis.pipeline();
-  pipeline.zremrangebyscore(windowKey, '-inf', windowStart); // evict old entries
-  pipeline.zcard(windowKey);                                  // count in window
-  pipeline.zadd(windowKey, now, `${now}-${Math.random()}`);  // add this request
-  pipeline.expire(windowKey, windowSec * 2);                 // keep key alive
-  // Track per-second hit for rolling req/sec calculation (12s TTL) — same as fixedWindow
+  // Count current entries in THIS bucket only (entries added in current minute)
+  pipeline.zcount(windowKey, bucketStart, now);
+  // Add this request with timestamp score
+  pipeline.zadd(windowKey, now, `${now}-${Math.random()}`);
+  // Set TTL to expire at end of minute
+  pipeline.expire(windowKey, windowSec + 10);  // +10s buffer for safety
+  // Track per-second hit for rolling req/sec calculation (12s TTL)
   pipeline.zadd(secKey, now, `${now}-${Math.random().toString(36).slice(2)}`);
   pipeline.expire(secKey, 12);
   const results = await pipeline.exec();
 
-  const countBeforeAdd = (results?.[1]?.[1] as number) ?? 0;
+  const countBeforeAdd = (results?.[0]?.[1] as number) ?? 0;
   const allowed        = countBeforeAdd < cfg.max;
 
   // If over limit, remove the entry we just added
