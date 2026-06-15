@@ -267,6 +267,10 @@ const AnalyticsService = {
       
       const limit = row.limit ?? 0;
       const remaining = Math.max(0, limit - currentHits);
+      
+      // DEBUG LOG
+      console.log(`[getLimiters] ${row.endpoint}: Redis=${liveHits}, Mongo=${row.currentHits ?? 0}, Final=${currentHits}, Bucket=${live?.bucketStart ? new Date(live.bucketStart).toISOString() : 'none'}`);
+      
       return {
         limiterName: row.limiterName,
         endpoint: row.endpoint,
