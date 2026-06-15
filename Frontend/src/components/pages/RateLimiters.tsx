@@ -476,6 +476,8 @@ function ResetQueue({ cards, currentSecond }: { cards: LimiterCard[]; currentSec
         <tbody>
           {rows.map(({ card, pct, risk }) => {
             const color = stateColor(limiterState(card));
+            const isSlidingWindow = card.algorithm === 'Sliding Window';
+            const resetLabel = isSlidingWindow ? 'Rolling' : `${countdown}s`;
             return (
               <tr key={card.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                 <td style={{ padding: '11px 12px', color: '#f8fafc', fontSize: 12, fontWeight: 800, textAlign: 'left' }}>
@@ -491,7 +493,7 @@ function ResetQueue({ cards, currentSecond }: { cards: LimiterCard[]; currentSec
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '11px 12px', color, fontWeight: 900, fontSize: 12, textAlign: 'right' }}>{countdown}s</td>
+                <td style={{ padding: '11px 12px', color: isSlidingWindow ? COLORS.cyan : color, fontWeight: 900, fontSize: 12, textAlign: 'right' }}>{resetLabel}</td>
               
                 <td style={{ padding: '11px 12px', color: card.reqMin > 0 ? color : COLORS.textMuted, fontWeight: 800, fontSize: 12, textAlign: 'right' }}>{card.reqMin}</td>
                 <td style={{ padding: '11px 12px', color: riskColor(risk), fontWeight: 900, fontSize: 12, textAlign: 'right' }}>{risk}</td>
@@ -772,11 +774,6 @@ export default function RateLimiters() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <StatusPill icon={<Radio size={13} />}  label="Redis Connected"  color={COLORS.emerald} />
-          <StatusPill
-            icon={<Clock3 size={13} />}
-            label={`Resets in ${countdown}s`}
-            color={countdown <= 10 ? COLORS.amber : COLORS.textSecondary}
-          />
           <StatusPill
             icon={<Gauge size={13} />}
             label={hottest ? `Hottest: ${hottest.endpoint}` : 'Awaiting traffic'}
