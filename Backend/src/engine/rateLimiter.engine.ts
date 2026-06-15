@@ -82,8 +82,6 @@ export async function fixedWindow(
 ): Promise<LimiterResult> {
   const redis      = getRedis();
   const windowSec  = Math.floor(cfg.windowMs / 1000);
-  const windowKey  = `rt:fw:global:${endpoint}`;
-  const secKey     = `rt:sec:${endpoint}`;
   const now        = Date.now();
 
   // Clock-aligned window boundary (top of minute for 1-minute windows)
@@ -91,21 +89,19 @@ export async function fixedWindow(
   const windowEndMs   = windowStartMs + (windowSec * 1000);
   const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
 
+  // Include clock boundary in key to ensure automatic reset at minute boundary
+  const windowKey  = `rt:fw:global:${endpoint}:${windowStartMs}`;
+  const secKey     = `rt:sec:${endpoint}`;
+
   const pipeline = redis.pipeline();
   pipeline.incr(windowKey);
-  pipeline.ttl(windowKey);
+  pipeline.expire(windowKey, resetIn);  // Always set TTL to ensure clock alignment
   // Track per-second hit for rolling req/sec calculation (12s TTL)
   pipeline.zadd(secKey, now, `${now}-${Math.random().toString(36).slice(2)}`);
   pipeline.expire(secKey, 12);
   const results = await pipeline.exec();
 
   const count = (results?.[0]?.[1] as number) ?? 1;
-  const ttl   = (results?.[1]?.[1] as number) ?? -1;
-
-  // Set expiry aligned to clock boundary on first request or stale key
-  if (count === 1 || ttl === -1 || ttl === -2) {
-    await redis.expire(windowKey, resetIn);
-  }
 
   const allowed = count <= cfg.max;
 
@@ -177,8 +173,16 @@ export async function slidingWindow(
 // ─── Flush all Reqtrol Redis keys ──────────────────────────────────────────
 export async function flushAllKeys(): Promise<number> {
   const redis = getRedis();
+  // Scan for all rate limiter keys (fixed window with clock boundaries included)
   const keys  = await redis.keys('rt:*');
   if (keys.length === 0) return 0;
-  await redis.del(...keys);
-  return keys.length;
+  // Delete in batches to avoid blocking Redis
+  const batchSize = 100;
+  let deleted = 0;
+  for (let i = 0; i < keys.length; i += batchSize) {
+    const batch = keys.slice(i, i + batchSize);
+    await redis.del(...batch);
+    deleted += batch.length;
+  }
+  return deleted;
 }

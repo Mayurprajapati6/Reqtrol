@@ -77,20 +77,30 @@ async function getRedisInfo(): Promise<{
 async function getLimiterKeyStats(): Promise<Array<{ name: string; keys: number }>> {
   try {
     const redis = getRedis();
-    // Use EXISTS per-endpoint instead of redis.keys('rt:*') scan
-    return await Promise.all(
-      LIMITS_CONFIG.map(async (cfg) => {
-        const algo   = (cfg.algorithm ?? '').toLowerCase();
-        const fwKey  = `rt:fw:global:${cfg.endpoint}`;
-        const swKey  = `rt:sw:global:${cfg.endpoint}`;
-        const secKey = `rt:sec:${cfg.endpoint}`;
-        const exists = await redis.exists(
-          algo.includes('sliding') ? swKey : fwKey,
-          secKey,
-        );
-        return { name: cfg.limiterName, keys: exists };
-      }),
-    );
+    const now = Date.now();
+    
+    // Use single pipeline to batch all EXISTS checks - reduces round trips dramatically
+    const pipeline = redis.pipeline();
+    
+    LIMITS_CONFIG.forEach((cfg) => {
+      const algo   = (cfg.algorithm ?? '').toLowerCase();
+      const windowMs = cfg.windowMs;
+      const bucketStart = Math.floor(now / windowMs) * windowMs;
+      
+      if (algo.includes('sliding')) {
+        pipeline.exists(`rt:sw:global:${cfg.endpoint}`, `rt:sec:${cfg.endpoint}`);
+      } else {
+        // For fixed window, include clock boundary in key
+        pipeline.exists(`rt:fw:global:${cfg.endpoint}:${bucketStart}`, `rt:sec:${cfg.endpoint}`);
+      }
+    });
+    
+    const results = await pipeline.exec();
+    
+    return LIMITS_CONFIG.map((cfg, i) => ({
+      name: cfg.limiterName,
+      keys: (results?.[i]?.[1] as number) ?? 0,
+    }));
   } catch {
     return LIMITS_CONFIG.map(c => ({ name: c.limiterName, keys: 0 }));
   }
@@ -120,7 +130,7 @@ async function getLiveLimiterWindows(configs: LimitConfig[]): Promise<Map<string
     const redis = getRedis();
 
     // ── Read all endpoint counters in a single pipeline (no redis.keys scan) ──
-    // Fixed-window  key: rt:fw:global:{endpoint}  → GET
+    // Fixed-window  key: rt:fw:global:{endpoint}:{bucketStart}  → GET (includes clock boundary)
     // Sliding-window key: rt:sw:global:{endpoint} → ZCOUNT [bucketStart, now]
     // Per-second key:    rt:sec:{endpoint}         → ZCOUNT [now-10000, now]
     const pipeline = redis.pipeline();
@@ -131,11 +141,12 @@ async function getLiveLimiterWindows(configs: LimitConfig[]): Promise<Map<string
       const algo        = (cfg.algorithm ?? '').toLowerCase();
 
       if (algo.includes('fixed') || algo === 'fw') {
-        pipeline.get(`rt:fw:global:${cfg.endpoint}`);         // index: 3i
+        // Include clock boundary in key to match fixedWindow function
+        pipeline.get(`rt:fw:global:${cfg.endpoint}:${bucketStart}`);         // index: 2i
       } else {
-        pipeline.zcount(`rt:sw:global:${cfg.endpoint}`, bucketStart, now); // index: 3i
+        pipeline.zcount(`rt:sw:global:${cfg.endpoint}`, bucketStart, now); // index: 2i
       }
-      pipeline.zcount(`rt:sec:${cfg.endpoint}`, now - 10_000, now);        // index: 3i+1
+      pipeline.zcount(`rt:sec:${cfg.endpoint}`, now - 10_000, now);        // index: 2i+1
     }
 
     const results = await pipeline.exec();
