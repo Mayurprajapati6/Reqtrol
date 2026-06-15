@@ -154,9 +154,27 @@ function buildTimelineData(
     return pt;
   });
 
+  console.log('[Timeline] Building chart data:', {
+    minuteStart: new Date(minuteStart).toISOString(),
+    eventCount: events.length,
+    now: new Date().toISOString()
+  });
+
   for (const event of events) {
     const eventMs = new Date(event.timestamp).getTime();
     const s = Math.floor((eventMs - minuteStart) / 1000);
+    
+    // Debug first few events
+    if (slots.filter(sl => sl.total > 0).length < 3) {
+      console.log('[Timeline] Placing event:', {
+        timestamp: event.timestamp,
+        eventMs,
+        minuteStart,
+        calculatedSecond: s,
+        endpoint: event.endpoint
+      });
+    }
+    
     if (s < 0 || s > 59) continue; // outside current minute — skip
     const ep   = normalizeEventEndpoint(event.endpoint);
     const card = realCards.find((c) => c.endpoint === ep);
@@ -617,6 +635,14 @@ export default function RateLimiters() {
       (e) => new Date(e.timestamp).getTime() >= bucketStart,
     );
 
+    console.log('[Card Enrichment]', {
+      now: new Date(nowMs).toISOString(),
+      bucketStart: new Date(bucketStart).toISOString(),
+      bucketEnd: new Date(bucketEnd).toISOString(),
+      recentEventsCount: recentEvents.length,
+      rawCardsCount: rawCards.length
+    });
+
     return rawCards.map((card) => {
       if (isWebhook(card)) return card;
 
@@ -641,6 +667,19 @@ export default function RateLimiters() {
       const used = backendIsCurrentMinute
           ? (card.used ?? 0)  // Trust backend when it's from current minute
           : eventsThisMin;     // Use live events when backend is stale
+      
+      // Debug for payment/order endpoint
+      if (card.endpoint === '/payment/order') {
+        console.log('[Card /payment/order]', {
+          backendUsed: card.used,
+          backendBucketStart: card.bucketStart ? new Date(card.bucketStart).toISOString() : 'null',
+          backendBucketEnd: card.bucketEnd ? new Date(card.bucketEnd).toISOString() : 'null',
+          currentBucketStart: new Date(bucketStart).toISOString(),
+          backendIsCurrentMinute,
+          eventsThisMin,
+          finalUsed: used
+        });
+      }
 
       const remaining  = Math.max(0, card.total - used);
       const saturation = card.total > 0
