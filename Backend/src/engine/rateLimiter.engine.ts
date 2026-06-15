@@ -136,9 +136,14 @@ export async function slidingWindow(
 
   // Clock-aligned boundary calculation (same as fixed window)
   // CRITICAL FIX: Calculate resetIn from clock boundary, not oldest entry
-  const windowStartMs = Math.floor(now / (cfg.windowMs)) * cfg.windowMs;
+  const windowStartMs = Math.floor(now / cfg.windowMs) * cfg.windowMs;
   const windowEndMs   = windowStartMs + cfg.windowMs;
   const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
+  
+  // Debug log to verify calculation
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[SlidingWindow] now=${now}, windowMs=${cfg.windowMs}, startMs=${windowStartMs}, endMs=${windowEndMs}, resetIn=${resetIn}s`);
+  }
 
   const pipeline = redis.pipeline();
   pipeline.zremrangebyscore(windowKey, '-inf', windowStart); // evict old entries
