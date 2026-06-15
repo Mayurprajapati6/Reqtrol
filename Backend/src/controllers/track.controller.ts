@@ -8,7 +8,12 @@ export const trackController = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    console.log(`[TrackController] Received track request: endpoint=${req.body?.endpoint}, userId=${req.body?.userId}, source=${req.body?.source}`);
+    
     const body = trackSchema.parse(req.body);
+    
+    console.log(`[TrackController] Validated body: endpoint=${body.endpoint}, userId=${body.userId}, allowed=${body.allowed}`);
+    
     const result = await TrackerService.track({
       analyticsId:    body.analyticsId,
       requestId:      body.requestId,
@@ -36,8 +41,12 @@ export const trackController = async (
       responseTimeMs: body.responseTimeMs,
       statusCode:     body.statusCode,
     });
+    
+    console.log(`[TrackController] Track successful: ${result.tracked ? 'NEW' : 'DUPLICATE'}`);
+    
     res.status(200).json({ success: true, ...result });
   } catch (err) {
+    console.error(`[TrackController] Track failed:`, err);
     next(err);
   }
 };
