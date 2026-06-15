@@ -88,22 +88,24 @@ export async function fixedWindow(
   const windowStartMs = Math.floor(now / (windowSec * 1000)) * (windowSec * 1000);
   const windowEndMs   = windowStartMs + (windowSec * 1000);
   
-  // Use UTC seconds calculation to avoid timezone issues
-  const currentSecond = Math.floor((now / 1000) % 60);
-  const resetIn       = Math.max(1, 60 - currentSecond);
+  // Calculate TTL: time remaining until window ends (not a fixed 60s!)
+  const ttlSeconds = Math.ceil((windowEndMs - now) / 1000);
+  
+  // Calculate resetIn: seconds until window ends
+  const resetIn = Math.max(1, ttlSeconds);
 
   // Include clock boundary in key to ensure automatic reset at minute boundary
   const windowKey  = `rt:fw:global:${endpoint}:${windowStartMs}`;
   const secKey     = `rt:sec:${endpoint}`;
 
   // CRITICAL FIX: Only set TTL on first request (when count=1), not on every request
-  // Otherwise, TTL keeps getting reset and key never expires
+  // TTL is set to expire EXACTLY when the window ends, not 60s from now
   const count = await redis.incr(windowKey);
   
   if (count === 1) {
-    // First request in this window - set the TTL
-    await redis.expire(windowKey, windowSec);
-    console.log(`[FixedWindow] NEW WINDOW for ${endpoint}: key=${windowKey}, TTL=${windowSec}s, bucket=${new Date(windowStartMs).toISOString()}`);
+    // First request in this window - set TTL to expire at window boundary
+    await redis.expire(windowKey, ttlSeconds);
+    console.log(`[FixedWindow] NEW WINDOW for ${endpoint}: key=${windowKey}, TTL=${ttlSeconds}s (expires at ${new Date(windowEndMs).toISOString()}), bucket=${new Date(windowStartMs).toISOString()}`);
   } else {
     console.log(`[FixedWindow] ${endpoint}: count=${count}, key=${windowKey}, bucket=${new Date(windowStartMs).toISOString()}`);
   }
