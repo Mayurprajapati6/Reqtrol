@@ -637,9 +637,9 @@ export default function RateLimiters() {
   // Timeline chart — pure rebuild every second from live events
   // Minute rollover: minuteStart changes → all slots reset to 0 automatically
   const timelineData = useMemo(
-    () => buildTimelineData(liveEvents, realCards, minuteStart, currentSecond),
+    () => buildTimelineData(liveEvents, realCards, minuteStart),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [liveEvents, realCards, minuteStart, currentSecond],
+    [liveEvents, realCards, minuteStart],
   );
 
   const hottest   = useMemo(() => [...realCards].sort((a, b) => usagePct(b) - usagePct(a))[0], [realCards]);
