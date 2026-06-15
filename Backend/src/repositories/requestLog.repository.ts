@@ -871,12 +871,15 @@ export const LimiterRepository = {
       // engine and the Minute Timeline chart. Resets exactly at :00 of each minute.
       const bucketStart = Math.floor(now / cfg.windowMs) * cfg.windowMs;
       const since = new Date(bucketStart);
+      // Direct endpoint match — documents are always stored with the canonical
+      // endpoint (normalizeEndpoint called in TrackerService and Repository.create),
+      // so $expr/$switch is not needed and we can use the { endpoint, timestamp }
+      // compound index for an efficient, index-covered query on Atlas.
       const [stats] = await RequestLog.aggregate([
         { $match: {
-          ...matchFor({ scope: 'global', source }),
+          endpoint:  cfg.endpoint,
           timestamp: { $gte: since },
         } },
-        { $match: { $expr: { $eq: [endpointExpression, cfg.endpoint] } } },
         {
           $group: {
             _id: null,
@@ -887,10 +890,9 @@ export const LimiterRepository = {
       ]);
       const [latest] = await RequestLog.aggregate([
         { $match: {
-          ...matchFor({ scope: 'global', source }),
+          endpoint:  cfg.endpoint,
           timestamp: { $gte: since },
         } },
-        { $match: { $expr: { $eq: [endpointExpression, cfg.endpoint] } } },
         { $sort: { timestamp: -1 } },
         { $limit: 1 },
       ]);
