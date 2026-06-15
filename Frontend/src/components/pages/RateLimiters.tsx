@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
@@ -146,7 +146,7 @@ function buildTimelineData(
   events: LiveEvent[],
   realCards: LimiterCard[],
   minuteStart: number,
-  currentMs: number,
+  maxSecond: number,   // current second of the minute (0-59) from client clock
 ): ChartPoint[] {
   // Pre-allocate 60 zero-filled slots
   const slots: ChartPoint[] = Array.from({ length: 60 }, (_, s) => {
@@ -155,14 +155,14 @@ function buildTimelineData(
     return pt;
   });
 
-  // Clamp to the current client-side second to prevent server clock drift
-  // from showing "future" data points (e.g., server at :47 while client shows s44/59).
-  const maxSecond = Math.min(59, Math.floor((currentMs - minuteStart) / 1000));
+  // Only render up to the current second (client clock) to avoid showing
+  // "future" data points when the server clock is slightly ahead of the client.
+  const clamp = Math.min(59, Math.max(0, maxSecond));
 
   for (const event of events) {
     const eventMs = new Date(event.timestamp).getTime();
     const s = Math.floor((eventMs - minuteStart) / 1000);
-    if (s < 0 || s > maxSecond) continue; // outside current minute window — skip
+    if (s < 0 || s > clamp) continue; // outside rendered window — skip
     const ep   = normalizeEventEndpoint(event.endpoint);
     const card = realCards.find((c) => c.endpoint === ep);
     if (!card) continue;
@@ -595,69 +595,45 @@ export default function RateLimiters() {
   const rawCards   = cardsQuery.data ?? [];
   const liveEvents = eventsQuery.data ?? [];
 
-  // "Hold last good value" per endpoint — survives mid-minute Redis eviction.
-  // Cleared at every minuteStart change so the circle resets correctly at :00.
-  const lastGoodRef   = useRef<Map<string, { used: number; reqMin: number; saturation: number; remaining: number }>>(new Map());
-  const lastMinuteRef = useRef<number>(0);
-
-  // Enrich cards with live-event data and the hold-last-good fallback.
+  // Simple enrichment: backend is now reliable (direct Redis reads + MongoDB fallback).
+  // reqMin: take max of backend value and live event count from current minute.
+  // used:   take backend value when > 0; when 0 (Redis just expired for this poll),
+  //         derive from live events in the current minute bucket only.
   const cards = useMemo(() => {
-    // Reset stored values whenever the clock-minute rolls over.
-    if (minuteStart !== lastMinuteRef.current) {
-      lastGoodRef.current.clear();
-      lastMinuteRef.current = minuteStart;
-    }
+    const nowMs        = Date.now();
+    const bucketStart  = Math.floor(nowMs / 60000) * 60000;   // clock-aligned minute start
 
+    // Filter events to only those within the CURRENT minute
     const recentEvents = liveEvents.filter(
-      (e) => new Date(e.timestamp).getTime() >= minuteStart,
+      (e) => new Date(e.timestamp).getTime() >= bucketStart,
     );
 
     return rawCards.map((card) => {
       if (isWebhook(card)) return card;
 
-      // reqMin: count live events in the current minute
-      const endpointEvents = recentEvents.filter(
+      // Count live events for this endpoint this minute
+      const eventsThisMin = recentEvents.filter(
         (e) => normalizeEventEndpoint(e.endpoint) === card.endpoint,
-      );
-      const reqMinFromEvents = endpointEvents.length;
-      const reqMin           = Math.max(card.reqMin ?? 0, reqMinFromEvents);
+      ).length;
 
-      // Only trust backend data when its bucket matches the current minute.
-      // If rawCards is stale (previous poll before the minute rolled over),
-      // card.bucketStart < minuteStart → treat as 0 so stale data cannot
-      // repopulate the just-cleared lastGoodRef and bleed into the new minute.
-      const isCurrentBucket = card.bucketStart === minuteStart;
-      const reqMinBest      = isCurrentBucket
-        ? Math.max(reqMinFromEvents, card.reqMin ?? 0)
-        : reqMinFromEvents;
-      const usedFromReqMin  = Math.min(reqMinBest, card.total > 0 ? card.total : reqMinBest);
-      const computedUsed    = card.used > 0 ? card.used : usedFromReqMin;
-      const trustedUsed     = isCurrentBucket ? computedUsed : 0; // ← key guard
+      // reqMin: best of backend + live events
+      const reqMin = Math.max(card.reqMin ?? 0, eventsThisMin);
 
-      // Update map only with current-minute data (non-decreasing within the minute)
-      const last = lastGoodRef.current.get(card.endpoint);
-      if (trustedUsed > 0 || (isCurrentBucket && reqMin > 0)) {
-        lastGoodRef.current.set(card.endpoint, {
-          used:       Math.max(trustedUsed, last?.used ?? 0),
-          reqMin:     Math.max(reqMin,      last?.reqMin ?? 0),
-          saturation: card.total > 0
-            ? Math.min(100, Math.round((Math.max(trustedUsed, last?.used ?? 0) / card.total) * 1000) / 10)
-            : 0,
-          remaining:  Math.max(0, card.total - Math.max(trustedUsed, last?.used ?? 0)),
-        });
-      }
+      // used: trust backend when non-zero (Redis live or MongoDB fallback)
+      //       If backend returned 0, derive from events capped at limit
+      const used =
+        card.used > 0
+          ? card.used
+          : Math.min(eventsThisMin, card.total > 0 ? card.total : eventsThisMin);
 
-      // Fall back to last good when current data is 0
-      const good        = lastGoodRef.current.get(card.endpoint);
-      const used        = trustedUsed > 0 ? trustedUsed : (good?.used ?? 0);
-      const remaining   = Math.max(0, card.total - used);
-      const saturation  = card.total > 0 ? Math.min(100, Math.round((used / card.total) * 1000) / 10) : 0;
-      const displayReqMin = Math.max(reqMin, good?.reqMin ?? 0);
+      const remaining  = Math.max(0, card.total - used);
+      const saturation = card.total > 0
+        ? Math.min(100, Math.round((used / card.total) * 1000) / 10)
+        : 0;
 
-      return { ...card, used, remaining, saturation, reqMin: displayReqMin };
+      return { ...card, used, remaining, saturation, reqMin };
     });
-
-  }, [rawCards, liveEvents, minuteStart]);
+  }, [rawCards, liveEvents]);
 
 
 
