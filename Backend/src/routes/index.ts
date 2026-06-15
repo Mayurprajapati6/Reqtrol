@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { pingController } from '../controllers/simulator.controller';
+import { pingController, flushRedisController } from '../controllers/simulator.controller';
 import limitRouter    from './limit.routes';
 import trackRouter    from './track.routes';
 import statsRouter    from './stats.routes';
@@ -11,6 +11,7 @@ const rootRouter = Router();
 
 // Health
 rootRouter.get('/ping', pingController);
+rootRouter.get('/flush-redis', flushRedisController);
 
 // Feature routers
 rootRouter.use('/check-limit', limitRouter);
