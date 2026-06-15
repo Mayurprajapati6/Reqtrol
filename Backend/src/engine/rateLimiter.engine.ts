@@ -96,15 +96,18 @@ export async function fixedWindow(
   const windowKey  = `rt:fw:global:${endpoint}:${windowStartMs}`;
   const secKey     = `rt:sec:${endpoint}`;
 
-  const pipeline = redis.pipeline();
-  pipeline.incr(windowKey);
-  pipeline.expire(windowKey, resetIn);  // Always set TTL to ensure clock alignment
+  // CRITICAL FIX: Only set TTL on first request (when count=1), not on every request
+  // Otherwise, TTL keeps getting reset and key never expires
+  const count = await redis.incr(windowKey);
+  
+  if (count === 1) {
+    // First request in this window - set the TTL
+    await redis.expire(windowKey, windowSec);
+  }
+  
   // Track per-second hit for rolling req/sec calculation (12s TTL)
-  pipeline.zadd(secKey, now, `${now}-${Math.random().toString(36).slice(2)}`);
-  pipeline.expire(secKey, 12);
-  const results = await pipeline.exec();
-
-  const count = (results?.[0]?.[1] as number) ?? 1;
+  await redis.zadd(secKey, now, `${now}-${Math.random().toString(36).slice(2)}`);
+  await redis.expire(secKey, 12);
 
   const allowed = count <= cfg.max;
 

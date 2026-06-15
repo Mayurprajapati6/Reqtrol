@@ -132,7 +132,7 @@ async function getLiveLimiterWindows(configs: LimitConfig[]): Promise<Map<string
 
     // ── Read all endpoint counters in a single pipeline (no redis.keys scan) ──
     // Fixed-window  key: rt:fw:global:{endpoint}:{bucketStart}  → GET (includes clock boundary)
-    // Sliding-window key: rt:sw:global:{endpoint} → ZCOUNT [bucketStart, now]
+    // Sliding-window key: rt:sw:global:{endpoint}:{bucketStart} → ZCOUNT [bucketStart, now]
     // Per-second key:    rt:sec:{endpoint}         → ZCOUNT [now-10000, now]
     const pipeline = redis.pipeline();
 
@@ -145,7 +145,7 @@ async function getLiveLimiterWindows(configs: LimitConfig[]): Promise<Map<string
         // Include clock boundary in key to match fixedWindow function
         pipeline.get(`rt:fw:global:${cfg.endpoint}:${bucketStart}`);         // index: 2i
       } else {
-        // Sliding window now also uses minute-bucketed keys
+        // Sliding window also uses minute-bucketed keys (matches slidingWindow engine function)
         pipeline.zcount(`rt:sw:global:${cfg.endpoint}:${bucketStart}`, bucketStart, now); // index: 2i
       }
       pipeline.zcount(`rt:sec:${cfg.endpoint}`, now - 10_000, now);        // index: 2i+1

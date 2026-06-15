@@ -155,44 +155,25 @@ function buildTimelineData(
   });
 
   const minuteEnd = minuteStart + 60_000;
-  
-  console.log('[Timeline] Building chart data:', {
-    minuteStart: new Date(minuteStart).toISOString(),
-    minuteEnd: new Date(minuteEnd).toISOString(),
-    totalEvents: events.length,
-    now: new Date().toISOString()
-  });
 
   // CRITICAL: Only show events from CURRENT minute
   const currentMinuteEvents = events.filter(event => {
     const eventMs = new Date(event.timestamp).getTime();
     return eventMs >= minuteStart && eventMs < minuteEnd;
   });
-  
-  console.log('[Timeline] Filtered to current minute:', {
-    currentMinuteEvents: currentMinuteEvents.length,
-    filtered: events.length - currentMinuteEvents.length
-  });
 
   for (const event of currentMinuteEvents) {
     const eventMs = new Date(event.timestamp).getTime();
+    
+    // Calculate second within minute (0-59)
     const s = Math.floor((eventMs - minuteStart) / 1000);
     
-    // Debug first few events
-    if (slots.filter(sl => sl.total > 0).length < 3) {
-      console.log('[Timeline] Placing event:', {
-        timestamp: event.timestamp,
-        eventMs,
-        minuteStart,
-        calculatedSecond: s,
-        endpoint: event.endpoint
-      });
-    }
-    
     if (s < 0 || s > 59) continue; // outside current minute — skip (should never happen now)
+    
     const ep   = normalizeEventEndpoint(event.endpoint);
     const card = realCards.find((c) => c.endpoint === ep);
     if (!card) continue;
+    
     const key = endpointKey(card.endpoint);
     (slots[s] as Record<string, number>)[key] = ((slots[s] as Record<string, number>)[key] ?? 0) + 1;
     slots[s].total += 1;
@@ -419,13 +400,12 @@ function ChartTooltip({
   // label is the second (0-59), minuteStart is the minute boundary in ms
   const secondInMs = (label as number) * 1000;
   const slotTimestamp = minuteStart + secondInMs;
-  const now = Date.now();
-  
-  // Don't show tooltip for future seconds that haven't occurred yet
-  if (slotTimestamp > now) return null;
   
   const timestamp = fmtIST(slotTimestamp);
   const total = payload.reduce((s, p) => s + (p.value ?? 0), 0);
+  
+  // Don't show tooltip if no requests in this second
+  if (total === 0) return null;
   
   // Group requests by endpoint with full endpoint names
   const endpointBreakdown = payload
@@ -655,67 +635,16 @@ export default function RateLimiters() {
   const rawCards   = cardsQuery.data ?? [];
   const liveEvents = eventsQuery.data ?? [];
 
-  // Simple enrichment: backend is now reliable (direct Redis reads + MongoDB fallback).
-  // reqMin: take max of backend value and live event count from current minute.
-  // used:   take backend value when > 0; when 0 (Redis just expired for this poll),
-  //         derive from live events in the current minute bucket only.
+  // Card enrichment: use backend Redis data directly (always current bucket)
+  // Backend now uses clock-aligned keys that expire automatically at minute boundary
   const cards = useMemo(() => {
-    const nowMs        = Date.now();
-    const bucketStart  = Math.floor(nowMs / 60000) * 60000;   // clock-aligned minute start
-    const bucketEnd    = bucketStart + 60000;
-
-    // Filter events to only those within the CURRENT minute
-    const recentEvents = liveEvents.filter(
-      (e) => new Date(e.timestamp).getTime() >= bucketStart,
-    );
-
-    console.log('[Card Enrichment]', {
-      now: new Date(nowMs).toISOString(),
-      bucketStart: new Date(bucketStart).toISOString(),
-      bucketEnd: new Date(bucketEnd).toISOString(),
-      totalLiveEvents: liveEvents.length,
-      recentEventsCount: recentEvents.length,
-      rawCardsCount: rawCards.length
-    });
-
     return rawCards.map((card) => {
       if (isWebhook(card)) return card;
 
-      // Count live events for this endpoint this minute
-      const eventsThisMin = recentEvents.filter(
-        (e) => normalizeEventEndpoint(e.endpoint) === card.endpoint,
-      ).length;
-
-      // CRITICAL FIX: Check if backend data is from CURRENT minute bucket
-      // If bucketStart/bucketEnd from backend matches current minute, trust it
-      // Otherwise, backend is returning stale data from previous minute
-      const backendIsCurrentMinute = 
-        card.bucketStart && card.bucketEnd &&
-        card.bucketStart === bucketStart && 
-        card.bucketEnd === bucketEnd;
-
-      // reqMin: best of backend + live events
-      const reqMin = Math.max(card.reqMin ?? 0, eventsThisMin);
-
-      // CRITICAL FIX: When minute changes, FORCE reset to 0 or live events count
-      // Don't trust backend data from previous minute even if it's non-zero
-      const used = backendIsCurrentMinute
-          ? (card.used ?? 0)  // Trust backend when it's from current minute
-          : eventsThisMin;     // Use live events when backend is stale
-      
-      // Debug for payment/order endpoint
-      if (card.endpoint === '/payment/order') {
-        console.log('[Card /payment/order]', {
-          backendUsed: card.used,
-          backendBucketStart: card.bucketStart ? new Date(card.bucketStart).toISOString() : 'null',
-          backendBucketEnd: card.bucketEnd ? new Date(card.bucketEnd).toISOString() : 'null',
-          currentBucketStart: new Date(bucketStart).toISOString(),
-          backendIsCurrentMinute,
-          eventsThisMin,
-          finalUsed: used
-        });
-      }
-
+      // Backend returns currentHits directly from Redis with clock-aligned keys
+      // No need for complex frontend enrichment - trust the backend
+      const used       = card.used ?? 0;
+      const reqMin     = card.reqMin ?? 0;
       const remaining  = Math.max(0, card.total - used);
       const saturation = card.total > 0
         ? Math.min(100, Math.round((used / card.total) * 1000) / 10)
@@ -723,7 +652,7 @@ export default function RateLimiters() {
 
       return { ...card, used, remaining, saturation, reqMin };
     });
-  }, [rawCards, liveEvents]);
+  }, [rawCards]);
 
 
 
