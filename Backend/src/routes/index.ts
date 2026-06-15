@@ -12,6 +12,7 @@ const rootRouter = Router();
 // Health
 rootRouter.get('/ping', pingController);
 rootRouter.get('/flush-redis', flushRedisController);
+rootRouter.post('/flush-redis', flushRedisController);  // Also accept POST
 
 // Feature routers
 rootRouter.use('/check-limit', limitRouter);

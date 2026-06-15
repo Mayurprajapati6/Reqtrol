@@ -632,13 +632,17 @@ export default function RateLimiters() {
 
     // Filter events to only those within the CURRENT minute
     const recentEvents = liveEvents.filter(
-      (e) => new Date(e.timestamp).getTime() >= bucketStart,
+      (e) => {
+        const eventMs = new Date(e.timestamp).getTime();
+        return eventMs >= bucketStart && eventMs < bucketEnd;
+      }
     );
 
     console.log('[Card Enrichment]', {
       now: new Date(nowMs).toISOString(),
       bucketStart: new Date(bucketStart).toISOString(),
       bucketEnd: new Date(bucketEnd).toISOString(),
+      totalLiveEvents: liveEvents.length,
       recentEventsCount: recentEvents.length,
       rawCardsCount: rawCards.length
     });
