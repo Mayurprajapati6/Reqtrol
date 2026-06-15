@@ -121,6 +121,7 @@ export async function fixedWindow(
 // Uses Redis Sorted Set — score = timestamp, no boundary-burst problem
 // Slightly more memory: O(n) entries per endpoint
 // Global rate limiting: all users share the same window per endpoint
+// CLOCK-ALIGNED: Reset time calculated from clock boundary for UX consistency
 export async function slidingWindow(
   userId: string,
   endpoint: string,
@@ -132,6 +133,11 @@ export async function slidingWindow(
   const windowKey   = `rt:sw:global:${endpoint}`;
   const secKey      = `rt:sec:${endpoint}`;
   const windowSec   = Math.floor(cfg.windowMs / 1000);
+
+  // Clock-aligned boundary calculation (same as fixed window)
+  const windowStartMs = Math.floor(now / (windowSec * 1000)) * (windowSec * 1000);
+  const windowEndMs   = windowStartMs + (windowSec * 1000);
+  const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
 
   const pipeline = redis.pipeline();
   pipeline.zremrangebyscore(windowKey, '-inf', windowStart); // evict old entries
@@ -149,14 +155,6 @@ export async function slidingWindow(
   // If over limit, remove the entry we just added
   if (!allowed) {
     await redis.zpopmax(windowKey);
-  }
-
-  // Calculate resetIn from oldest surviving entry
-  const oldest = await redis.zrange(windowKey, 0, 0, 'WITHSCORES');
-  let resetIn  = windowSec;
-  if (oldest.length >= 2) {
-    const oldestScore = Number(oldest[1]);
-    resetIn = Math.max(0, Math.ceil((oldestScore + cfg.windowMs - now) / 1000));
   }
 
   return {

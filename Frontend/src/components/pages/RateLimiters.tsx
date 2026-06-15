@@ -377,8 +377,14 @@ function ChartTooltip({
   minuteStart: number;
 }) {
   if (!active || !payload?.length || label == null) return null;
-  const timestamp = fmtIST(minuteStart + (label as number) * 1000);
+  // label is the second (0-59), minuteStart is the minute boundary in ms
+  const secondInMs = (label as number) * 1000;
+  const timestamp = fmtIST(minuteStart + secondInMs);
   const total = payload.reduce((s, p) => s + (p.value ?? 0), 0);
+  
+  // Extract just HH:MM:SS for cleaner display
+  const timeOnly = timestamp; // Already formatted as HH:MM:SS by fmtIST
+  
   return (
     <div style={{
       background: 'rgba(5,8,22,0.97)', border: '1px solid rgba(6,182,212,0.35)',
@@ -387,7 +393,7 @@ function ChartTooltip({
       backdropFilter: 'blur(18px)',
     }}>
       <div style={{ color: COLORS.cyan, fontWeight: 800, fontSize: 11, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>
-        {timestamp}
+        {timeOnly}
       </div>
       {payload.filter((p) => (p.value ?? 0) > 0).map((item) => (
         <div key={item.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginBottom: 3 }}>
