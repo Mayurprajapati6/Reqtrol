@@ -278,9 +278,15 @@ const LimiterPressureCard = memo(function LimiterPressureCard({
   const color     = stateColor(state);
   const pct       = usagePct(card);
   const burst     = !isWebhook(card) && card.total >= 5;
-  // All time values derived from server clock — never from resetAt
-  const countdown = clockCountdown(currentSecond);
   const webhook   = isWebhook(card);
+  
+  // Different reset logic for sliding vs fixed window
+  const isSlidingWindow = card.algorithm === 'Sliding Window';
+  const countdown = clockCountdown(currentSecond);
+  
+  // For sliding window, show "Rolling 60s" instead of countdown
+  const resetLabel = isSlidingWindow ? 'Rolling' : `${countdown}s`;
+  const resetHelp = isSlidingWindow ? 'Last 60 seconds' : 'Resets at :00';
 
   return (
     <motion.article
@@ -364,8 +370,8 @@ const LimiterPressureCard = memo(function LimiterPressureCard({
           />
           <Metric
             label="Resets In"
-            value={webhook ? '—' : `${countdown}s`}
-            color={countdown <= 10 ? COLORS.amber : COLORS.textSecondary}
+            value={webhook ? '—' : resetLabel}
+            color={isSlidingWindow ? COLORS.cyan : (countdown <= 10 ? COLORS.amber : COLORS.textSecondary)}
           />
           
           <Metric
@@ -389,7 +395,7 @@ function ChartTooltip({
   active, payload, label, realCards, minuteStart,
 }: {
   active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string }>;
+  payload?: Array<{ name: string; value: number; color: string; dataKey?: string }>;
   label?: number;
   realCards: LimiterCard[];
   minuteStart: number;
@@ -407,23 +413,35 @@ function ChartTooltip({
   const timestamp = fmtIST(slotTimestamp);
   const total = payload.reduce((s, p) => s + (p.value ?? 0), 0);
   
-  // Extract just HH:MM:SS for cleaner display
-  const timeOnly = timestamp; // Already formatted as HH:MM:SS by fmtIST
+  // Group requests by endpoint with full endpoint names
+  const endpointBreakdown = payload
+    .filter((p) => (p.value ?? 0) > 0)
+    .map((item) => {
+      // dataKey is like "payment_order", convert back to "/payment/order"
+      const key = item.dataKey || item.name;
+      const card = realCards.find(c => endpointKey(c.endpoint) === key);
+      return {
+        endpoint: card?.endpoint || key.replace(/_/g, '/'),
+        count: item.value ?? 0,
+        color: item.color
+      };
+    })
+    .sort((a, b) => b.count - a.count);
   
   return (
     <div style={{
       background: 'rgba(5,8,22,0.97)', border: '1px solid rgba(6,182,212,0.35)',
-      borderRadius: 9, padding: '10px 13px', minWidth: 160,
+      borderRadius: 9, padding: '10px 13px', minWidth: 180,
       boxShadow: '0 18px 50px rgba(0,0,0,0.65), 0 0 24px rgba(6,182,212,0.12)',
       backdropFilter: 'blur(18px)',
     }}>
       <div style={{ color: COLORS.cyan, fontWeight: 800, fontSize: 11, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>
-        {timeOnly}
+        {timestamp}
       </div>
-      {payload.filter((p) => (p.value ?? 0) > 0).map((item) => (
-        <div key={item.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginBottom: 3 }}>
-          <span style={{ color: item.color, fontSize: 11, fontWeight: 600 }}>{item.name}</span>
-          <span style={{ color: '#f8fafc', fontSize: 11, fontWeight: 800 }}>{item.value} req</span>
+      {endpointBreakdown.map((item) => (
+        <div key={item.endpoint} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginBottom: 3 }}>
+          <span style={{ color: item.color, fontSize: 11, fontWeight: 600 }}>{item.endpoint}</span>
+          <span style={{ color: '#f8fafc', fontSize: 11, fontWeight: 800 }}>{item.count} req</span>
         </div>
       ))}
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 7, paddingTop: 7, display: 'flex', justifyContent: 'space-between' }}>
@@ -632,10 +650,7 @@ export default function RateLimiters() {
 
     // Filter events to only those within the CURRENT minute
     const recentEvents = liveEvents.filter(
-      (e) => {
-        const eventMs = new Date(e.timestamp).getTime();
-        return eventMs >= bucketStart && eventMs < bucketEnd;
-      }
+      (e) => new Date(e.timestamp).getTime() >= bucketStart,
     );
 
     console.log('[Card Enrichment]', {
