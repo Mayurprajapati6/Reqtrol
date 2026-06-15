@@ -17,12 +17,12 @@ export const limiterKeys = {
   history:    (id: string) => [...limiterKeys.all, 'history', id]    as const,
 };
 
-const LIM_LIVE = { staleTime: 2_000, refetchInterval: 3_000, retry: 2 };
-const LIM_SLOW = { staleTime: 12_000, refetchInterval: 15_000, retry: 1 };
+const LIM_LIVE = { staleTime: 5_000, refetchInterval: 10_000, retry: 2 };
+const LIM_SLOW = { staleTime: 30_000, refetchInterval: 30_000, retry: 1 };
 
 export function useLimiterCards(source: AnalyticsSource = 'all') {
   const { pollingIntervalMs, realtimeEnabled } = useAppSettingsStore();
-  return useQuery({ queryKey: limiterKeys.cards(source), queryFn: () => getLimiterCards(source), ...LIM_LIVE, ...realtimeQueryPolicy, placeholderData: previous => previous, refetchInterval: realtimeEnabled ? Math.min(pollingIntervalMs, 3_000) : false });
+  return useQuery({ queryKey: limiterKeys.cards(source), queryFn: () => getLimiterCards(source), ...LIM_LIVE, ...realtimeQueryPolicy, placeholderData: previous => previous, refetchInterval: realtimeEnabled ? Math.max(pollingIntervalMs, 10_000) : false });
 }
 export function useLimiterRules(source: AnalyticsSource = 'all') {
   const { chartRefreshIntervalMs, realtimeEnabled } = useAppSettingsStore();

@@ -131,8 +131,8 @@ function useRecentLimiterEvents() {
   return useQuery({
     queryKey: ['rate-limiter-analytics', 'live-events', 'all'],
     queryFn: () => fetchLiveFeed(200, 'all'),
-    staleTime: 200,
-    refetchInterval: 500,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
     placeholderData: (previous) => previous,
     retry: 1,
   });
