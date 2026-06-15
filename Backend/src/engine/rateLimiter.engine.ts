@@ -140,10 +140,8 @@ export async function slidingWindow(
   const windowEndMs   = windowStartMs + cfg.windowMs;
   const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
   
-  // Debug log to verify calculation
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[SlidingWindow] now=${now}, windowMs=${cfg.windowMs}, startMs=${windowStartMs}, endMs=${windowEndMs}, resetIn=${resetIn}s`);
-  }
+  // Debug: log calculation to verify correctness
+  console.log(`[DEBUG] SlidingWindow ${endpoint}: now=${now}, windowMs=${cfg.windowMs}, startMs=${windowStartMs}, endMs=${windowEndMs}, resetIn=${resetIn}s`);
 
   const pipeline = redis.pipeline();
   pipeline.zremrangebyscore(windowKey, '-inf', windowStart); // evict old entries
