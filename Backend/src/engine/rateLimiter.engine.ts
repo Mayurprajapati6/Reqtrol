@@ -134,11 +134,14 @@ export async function slidingWindow(
   const secKey      = `rt:sec:${endpoint}`;
   const windowSec   = Math.floor(cfg.windowMs / 1000);
 
-  // Clock-aligned boundary calculation (same as fixed window)
-  // CRITICAL FIX: Calculate resetIn from clock boundary, not oldest entry
-  const windowStartMs = Math.floor(now / cfg.windowMs) * cfg.windowMs;
-  const windowEndMs   = windowStartMs + cfg.windowMs;
-  const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
+  // CRITICAL FIX: Calculate resetIn to NEXT clock boundary (:00 seconds)
+  // NOT from current window start - always show time until next :00 second
+  const nowDate       = new Date(now);
+  const currentSecond = nowDate.getSeconds();
+  const resetIn       = Math.max(1, 60 - currentSecond);
+
+  // Debug log for verification
+  console.log(`[DEBUG] SlidingWindow ${endpoint}: now=${now}, currentSecond=${currentSecond}, resetIn=${resetIn}s`);
 
   const pipeline = redis.pipeline();
   pipeline.zremrangebyscore(windowKey, '-inf', windowStart); // evict old entries
