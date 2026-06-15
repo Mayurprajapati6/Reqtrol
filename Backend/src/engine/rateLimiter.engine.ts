@@ -135,8 +135,9 @@ export async function slidingWindow(
   const windowSec   = Math.floor(cfg.windowMs / 1000);
 
   // Clock-aligned boundary calculation (same as fixed window)
-  const windowStartMs = Math.floor(now / (windowSec * 1000)) * (windowSec * 1000);
-  const windowEndMs   = windowStartMs + (windowSec * 1000);
+  // CRITICAL FIX: Calculate resetIn from clock boundary, not oldest entry
+  const windowStartMs = Math.floor(now / (cfg.windowMs)) * cfg.windowMs;
+  const windowEndMs   = windowStartMs + cfg.windowMs;
   const resetIn       = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
 
   const pipeline = redis.pipeline();
